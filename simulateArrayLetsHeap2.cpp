@@ -1,16 +1,7 @@
 #ifndef SIMULATE_ARRAYLETS_HEAP2
 #define SIMULATE_ARRAYLETS_HEAP2
 
-#include <stdio.h>
 #include <iostream>
-#include <sys/types.h>
-#include <sys/mman.h>
-#include <sys/ipc.h>
-#include <sys/shm.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 #include <fstream>
 #include <string>
 
@@ -18,63 +9,10 @@
 
 // To run:
 // g++ -g3 -Wno-write-strings -std=c++11 simulateArrayLetsHeap2.cpp -o simulateArrayLetsHeap2
+// Note: Insert -lrt flag for linux systems
 // ./simulateArrayLetsHeap2 12 1000
 
-#define ARRAYLET_COUNT 32
-#define TWO_HUNDRED_56_MB 256000000
-#define ONE_GB 1000000000 // 1GB
-
-char ** getArrayLets(size_t pagesize)
-   {
-   char** arrayLets = new char*[ARRAYLET_COUNT];
-
-   char * array1 = new char[pagesize * 4];
-   char * padding0 = new char[pagesize * 16];
-   char * array4 = new char[pagesize * 4];
-   char * padding1 = new char[pagesize * 16];
-   char * array5 = new char[pagesize * 4];
-   char * padding2 = new char[pagesize * 16];
-   char * array3 = new char[pagesize * 4];
-   char * padding3 = new char[pagesize * 16];
-   char * array2 = new char[pagesize * 4];
-
-   for (size_t i = 0; i < pagesize*4; i++) {
-      array1[i] = '1';
-      array4[i] = '4';
-      array3[i] = '3';
-      array2[i] = '2';
-      array5[i] = '5';
-   }
-
-   arrayLets[0] = array4;
-   arrayLets[1] = array5;
-   arrayLets[2] = array3;
-   arrayLets[3] = array1;
-   arrayLets[4] = array2;
-
-   delete [] padding0;
-   delete [] padding1;
-   delete [] padding2;
-   delete [] padding3;
-
-   return arrayLets;
-   }
-
-long getPageAlignedOffset(size_t pagesize, long num)
-   {
-   int remain = num % pagesize;
-   if(remain < pagesize / 2)
-      return num - remain;
-   else
-      return num + (pagesize - remain);
-   }
-
-void dealocateArrayLets(char** arrayLets)
-   {
-   delete [] arrayLets;
-   }
-
-char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[])
+char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[], char * addresses[])
    {
     char * contiguousMap = (char *)mmap(
                    NULL,
@@ -92,7 +30,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[])
     //    std::cout << "Successfully mmaped contiguousMap at address: " << (void *)contiguousMap << "\n";
     // }
     
-    char * addresses[ARRAYLET_COUNT];
+    addresses[ARRAYLET_COUNT] = contiguousMap;
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
         
@@ -116,16 +54,6 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[])
      return contiguousMap;
    }
 
-void modifyContiguousMem(size_t pagesize, size_t arrayletSize, char * contiguousMap) 
-   {
-    for(size_t i = 0; i < 256; i++) {
-        for(size_t j = 0; j < ARRAYLET_COUNT; j++)
-        {
-        contiguousMap[i+j*arrayletSize+pagesize] = '*';
-        }
-    }
-   }
-
 void copyModifyManualHeap(size_t pagesize, size_t arrayletSize, size_t totalArraySize, long arrayLetOffsets[], char * heapMmap) 
    {
    char tempArray[totalArraySize];
@@ -147,7 +75,6 @@ void copyModifyManualHeap(size_t pagesize, size_t arrayletSize, size_t totalArra
         }
    }
 
-//    std::cout << "tempArray: " << tempArray << std::endl;
    // Copy tempArray back into the heap 
    int offsetIdx = 0;
    
@@ -168,7 +95,7 @@ void copyModifyManualHeap(size_t pagesize, size_t arrayletSize, size_t totalArra
    }
    
 
-   }
+}
 
 /**
  * Uses shm_open and ftruncate to simulate heap as well as 
@@ -194,14 +121,15 @@ int main(int argc, char** argv) {
 
     size_t pagesize = getpagesize(); // 4096 bytes
     std::cout << "System page size: " << pagesize << " bytes.\n";
-    size_t arrayletSize = pagesize*16*16; // 4096 * 16 * 4 * 4 = 1MB
+    size_t arrayletSize = pagesize*16; // 4096 * 16 * = 64KB
+    std::cout << "arrayletSize size: " << arrayletSize << " bytes.\n";
 
     // 1. Simulate heap by allocating 256MB of memory
     //    No read, write or exec priviledges given 
 
     char * heapMmap = (char *)mmap(
                 NULL,
-                ONE_GB, // File size
+                TWO_HUNDRED_56_MB, // File size
                 PROT_NONE,
                 MAP_SHARED | MAP_ANON, // Must be shared
                 -1, // File handle
@@ -242,7 +170,7 @@ int main(int argc, char** argv) {
     long arrayLetOffsets[ARRAYLET_COUNT];
 
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % ONE_GB);
+        arrayLetOffsets[i] = getPageAlignedOffset(arrayletSize, rnd.nextNatural() % TWO_HUNDRED_56_MB);
     }
 
     // char * arrayletNames[ARRAYLET_COUNT];
@@ -254,7 +182,7 @@ int main(int argc, char** argv) {
     //     numStr = "t" + numStr;
     //     arrayletNames[i] = strdup(numStr.c_str());
     //     nums[i] = "11";
-    //     arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % ONE_GB);
+    //     arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % TWO_HUNDRED_56_MB);
     // }
 
     
@@ -293,56 +221,61 @@ int main(int argc, char** argv) {
     std::cout << "ArrayLets combined have size: " << totalArraySize << " bytes." << '\n';
     
     // ************************************************************************************************
-    // char * contiguousMap = mmapContiguous(totalArraySize, pagesize, fhs);
+    char * addresses[ARRAYLET_COUNT + 1];
+    double perIter[iterations], ignoreTimes[iterations];
+
+    // char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, fhs, addresses);
     // modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
 
     // copyModifyManualHeap(pagesize, totalArraySize, arrayLetOffsets, heapMmap);
 
     timer.startTimer();
-    double perIter[iterations];
     double lastTime = timer.getElapsedMillis();
-    
+    double middleTime = lastTime;
+
     for(size_t i = 0; i < iterations; i++) {
-        // // 3. Make Arraylets look contiguous with mmap
-        // char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, fhs);
+        // 3. Make Arraylets look contiguous with mmap
+        char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, fhs, addresses);
 
-        // // ************************************************************************************************
-        // // 4. Modify contiguous memory view and observe change in the heap
-        // modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
+        // ************************************************************************************************
+        // 4. Modify contiguous memory view and observe change in the heap
+        modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
 
-        // 3. 4. Both copy arraylets into a separate array, modify this array to then copy it back to the heap
-        copyModifyManualHeap(pagesize, arrayletSize, totalArraySize, arrayLetOffsets, heapMmap);
+        // Free addresses
+        middleTime = timer.getElapsedMillis();
+        freeAddresses(addresses, arrayletSize);
+
+        // // 3. 4. Both copy arraylets into a separate array, modify this array to then copy it back to the heap
+        // copyModifyManualHeap(pagesize, arrayletSize, totalArraySize, arrayLetOffsets, heapMmap);
 
         perIter[i] = timer.getElapsedMillis() - lastTime;
         lastTime = timer.getElapsedMillis();
+        ignoreTimes[i] = lastTime - middleTime;
     }
 
     int64_t elapsedTime = timer.getElapsedMillis();
-    std::cout << "Total time spent to create and modify both contiguous and heap locations: " 
-              << elapsedTime << " microseconds (" << elapsedTime/1000000.0 << " seconds)" << "\n"; 
 
     size_t perIterationSum = 0;
+    size_t ignoreTotal = 0;
     for(size_t i = 0; i < iterations; i++) {
         perIterationSum += perIter[i];
+        ignoreTotal += ignoreTimes[i];
     }
     size_t avgPerIter = perIterationSum / iterations;
-    std::cout << "Average time per iteration is: " << avgPerIter << " microseconds.\n";
+    size_t avgIgnore = ignoreTotal / iterations;
 
-    std::cout << "NOTE: 1 second = 10^6 microseconds.\n";
-    
-    // Required for printing to standard output 
-    // for(size_t i = 1; i < ARRAYLET_COUNT; i++)
-    // {
-    //     contiguousMap[i*arrayletSize-2] = '\0';
-    // }
+    printResults(elapsedTime, ignoreTotal, avgPerIter, avgIgnore);
     
     // Prints arraylets from heap location
-    // for(size_t i = 0; i < ARRAYLET_COUNT; i++)
-    // {
-    //     std::cout << "heapMmap+arrayLetOffsets[" << i << "]: " << heapMmap+arrayLetOffsets[i] << '\n';
+    // for(size_t i = 0; i < ARRAYLET_COUNT; i++) {   
+    //     std::cout << "heapMmap+arrayLetOffsets[" << i << "]: ";
+    //     for(size_t j = 0; j < arrayletSize; j++) {  
+    //         std::cout << (heapMmap+arrayLetOffsets[i])[j];
+    //     }
+    //     std::cout << std::endl;
     // }
 
-    munmap(heapMmap, ONE_GB);
+    munmap(heapMmap, TWO_HUNDRED_56_MB);
 
     return 0;
 }

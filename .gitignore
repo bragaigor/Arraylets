@@ -1,0 +1,4 @@
+*.dSYM
+simulateArrayLetsHeap
+simulateArrayLetsHeap2
+.vscode
