@@ -14,6 +14,8 @@
 #include <cstring>
 
 #define ARRAYLET_COUNT 32
+#define ARRAYLET_SIZE_CONST 2 // (pagesize)4096 * ARRAYLET_SIZE_CONST: 64 KB
+#define SIXTEEN 16
 #define TWO_HUNDRED_56_MB 256000000
 #define ONE_GB 1000000000 // 1GB
 #define PADDING_BYTES 128
@@ -65,14 +67,20 @@ public:
     }
 };
 
+size_t getArrayletSize(size_t pagesize)
+   {
+    // 4096 * 16 * 16 = 1MB
+    // 4096 * 16 = 64 KB
+    return pagesize*ARRAYLET_SIZE_CONST; 
+   }
+
 void modifyContiguousMem(size_t pagesize, size_t arrayletSize, char * contiguousMap) 
    {
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
        for(size_t j = 0; j < 256; j++) {  
             contiguousMap[i*arrayletSize+j] = '*';
-
-            contiguousMap[i*arrayletSize+2*pagesize+j] = '*';
-            contiguousMap[i*arrayletSize+6*pagesize+j] = '*';
+            contiguousMap[i*arrayletSize+(arrayletSize/4)+j] = '*';
+            contiguousMap[i*arrayletSize+(arrayletSize/2)+j] = '*';
             }
        }
    }

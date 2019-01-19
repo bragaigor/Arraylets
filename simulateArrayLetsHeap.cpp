@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
 
     size_t pagesize = getpagesize(); // 4096 bytes
     std::cout << "System page size: " << pagesize << " bytes.\n";
-    size_t arrayletSize = pagesize*16; // 4096 * 16 * 16 = 1MB
+    size_t arrayletSize = getArrayletSize(pagesize);
 
     char * filename = "temp.txt";
     int fh = shm_open(filename, O_RDWR | O_CREAT | O_EXCL, 0600);
@@ -116,26 +116,19 @@ int main(int argc, char** argv) {
        std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << '\n';
     }
 
-    // strncpy(heapMmap+arrayLetOffsets[0], "****************************************", 16);
-    // std::cout << "heapMmap+arrayLetOffsets[0]: " << heapMmap+arrayLetOffsets[0] << '\n';
+    char * tempNums[SIXTEEN] = {"33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF"};
 
-    char * nums[ARRAYLET_COUNT] = {"33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF",
-                                   "33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF"};
-                                //    "33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF",
-                                //    "33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF",
-                                //    "33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF",
-                                //    "33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF",
-                                //    "33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF",
-                                //    "33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF"};
+    char * nums[ARRAYLET_COUNT];
+    
     size_t totalArraySize = 0;
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+       nums[i] = tempNums[i%SIXTEEN];
        for (size_t j = 0; j < arrayletSize; j++) {
           strncpy(heapMmap+arrayLetOffsets[i]+j, nums[i], 1);
           totalArraySize++;
        }
     }
-    // std::cout << "Arraylet 3: " << heapMmap+arrayLetOffsets[3] << "\n";
     std::cout << "Arraylets created successfully.\n";
     std::cout << "ArrayLets combined have size: " << totalArraySize << " bytes." << '\n';
 
@@ -149,7 +142,6 @@ int main(int argc, char** argv) {
 
     // char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, addresses);
     // modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
-    // freeAddresses(addresses, arrayletSize);
 
     for(size_t i = 0; i < iterations; i++) {
         // 3. Make Arraylets look contiguous with mmap
