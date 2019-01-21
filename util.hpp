@@ -14,10 +14,14 @@
 #include <cstring>
 
 #define ARRAYLET_COUNT 32
-#define ARRAYLET_SIZE_CONST 2 // (pagesize)4096 * ARRAYLET_SIZE_CONST: 64 KB
+#define ARRAYLET_SIZE_CONST 16 * 16 * 64 // (pagesize)4096 * ARRAYLET_SIZE_CONST: 64 KB
 #define SIXTEEN 16
 #define TWO_HUNDRED_56_MB 256000000
 #define ONE_GB 1000000000 // 1GB
+#define FOUR_GB 4000000000 // 4GB
+#define EIGHT_GB 8000000000 // 8GB
+#define SIXTEEN_GB 16000000000 // 16GB
+#define SIXTY_FOUR_GB 64000000000 // 64GB
 #define PADDING_BYTES 128
 
 class ElapsedTimer {
@@ -93,6 +97,11 @@ void freeAddresses(char * addresses[], size_t arrayletSize)
     }
    }
 
+void freeAllocArray(void * allocArray)
+   {
+   free(allocArray);
+   }
+
 void printResults(size_t elapsedTime, size_t ignoreTotal, size_t avgPerIter, size_t avgIgnore)
    {
     std::cout << "Total time spent to create and modify both contiguous and heap locations: " 
@@ -101,9 +110,9 @@ void printResults(size_t elapsedTime, size_t ignoreTotal, size_t avgPerIter, siz
               << ignoreTotal/1000000.0 << " seconds)" << "\n"; 
     std::cout << "Total time - time ignored: " 
               << (elapsedTime - ignoreTotal) << " microseconds (" << (elapsedTime - ignoreTotal)/1000000.0 << " seconds)" << "\n"; 
+    std::cout << "Average time per iteration - time ignored: " << (avgPerIter-avgIgnore) << " microseconds.\n";
     std::cout << "Average time to free addresses: " << avgIgnore << " microseconds.\n";
     std::cout << "Total Average iteration time: " << avgPerIter << " microseconds.\n";
-    std::cout << "Average time per iteration - time ignored: " << (avgPerIter-avgIgnore) << " microseconds.\n";
 
     std::cout << "NOTE: 1 second = 10^6 microseconds.\n";
    }

@@ -7,6 +7,10 @@
 
 #include "util.hpp"
 
+// TODO try HUGE_TLB passed to mmap - MACOSX does not suport MAP_HUGETLB
+// TODO Code cleanup
+// TODO run approach 1 on linux. Use Ubuntu 16.04 on docker
+
 // To run:
 // g++ -g3 -Wno-write-strings -std=c++11 simulateArrayLetsHeap.cpp -o simulateArrayLetsHeap
 // Note: Insert -lrt flag for linux systems
@@ -86,11 +90,11 @@ int main(int argc, char** argv) {
 
     // Sets the desired size to be allocated
     // Failing to allocate memory will result in a bus error on access.
-    ftruncate(fh, TWO_HUNDRED_56_MB);
+    ftruncate(fh, FOUR_GB);
 
     char * heapMmap = (char *)mmap(
                 NULL,
-                TWO_HUNDRED_56_MB, // File size
+                FOUR_GB, // File size
                 PROT_READ|PROT_WRITE,
                 MAP_SHARED, // Must be shared
                 fh, // File handle
@@ -109,7 +113,7 @@ int main(int argc, char** argv) {
     // Get page alligned offsets
     long arrayLetOffsets[ARRAYLET_COUNT];
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % TWO_HUNDRED_56_MB);
+        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % FOUR_GB);
     }
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
@@ -177,7 +181,7 @@ int main(int argc, char** argv) {
     //     std::cout << "heapMmap+arrayLetOffsets[" << i << "]: " << heapMmap+arrayLetOffsets[i] << '\n';
     // }
 
-    munmap(heapMmap, TWO_HUNDRED_56_MB);
+    munmap(heapMmap, FOUR_GB);
 
     return 0;
 }

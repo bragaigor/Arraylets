@@ -54,24 +54,28 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[], cha
      return contiguousMap;
    }
 
-void copyModifyManualHeap(size_t pagesize, size_t arrayletSize, size_t totalArraySize, long arrayLetOffsets[], char * heapMmap) 
+char * copyModifyManualHeap(size_t pagesize, size_t arrayletSize, size_t totalArraySize, long arrayLetOffsets[], char * heapMmap) 
    {
-   char tempArray[totalArraySize];
+    char * tempArray = (char *)malloc(totalArraySize);
+    
+    // for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
+    //     for(size_t j = 0; j < arrayletSize; j++)
+    //     {
+    //         tempArray[j+(i*arrayletSize)] = (heapMmap+arrayLetOffsets[i])[j];
+    //     }
+    // }
 
-   for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-       
-    //    for(size_t j = 0; j < arrayletSize; j++)
-    //    {
-    //        tempArray[j+(i*arrayletSize)] = (heapMmap+arrayLetOffsets[i])[j];
-    //    }
-       std::memcpy(tempArray+(i*arrayletSize), heapMmap+arrayLetOffsets[i],arrayletSize);
-   }
+    for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
+        std::memcpy(tempArray+(i*arrayletSize), heapMmap+arrayLetOffsets[i],arrayletSize);
+    }
 
     // Modify temporary array with asterisks  
    for(size_t i = 0; i < 256; i++) {
        for(size_t j = 0; j < ARRAYLET_COUNT; j++)
         {
-        tempArray[i+j*arrayletSize+pagesize] = '*';
+        tempArray[i+j*arrayletSize] = '*';
+        tempArray[i+j*arrayletSize+(arrayletSize/4)] = '*';
+        tempArray[i+j*arrayletSize+(arrayletSize/4)] = '*';
         }
    }
 
@@ -88,12 +92,12 @@ void copyModifyManualHeap(size_t pagesize, size_t arrayletSize, size_t totalArra
 //        }
 //    }
 
-   for(size_t i = 0; i < ARRAYLET_COUNT; i++)
-   {
+   for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
        std::memcpy(heapMmap+arrayLetOffsets[i], tempArray+(i*arrayletSize), arrayletSize);
        (heapMmap+arrayLetOffsets[i])[arrayletSize-2] = '\0';
    }
-   
+
+   return tempArray;
 
 }
 
@@ -129,7 +133,7 @@ int main(int argc, char** argv) {
 
     char * heapMmap = (char *)mmap(
                 NULL,
-                TWO_HUNDRED_56_MB, // File size
+                FOUR_GB, // File size
                 PROT_NONE,
                 MAP_SHARED | MAP_ANON, // Must be shared
                 -1, // File handle
@@ -160,7 +164,7 @@ int main(int argc, char** argv) {
         numStr = "t" + numStr;
         arrayletNames[i] = strdup(numStr.c_str());
         nums[i] = tempNums[i%SIXTEEN];
-        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % TWO_HUNDRED_56_MB);
+        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % FOUR_GB);
     }
 
     
@@ -224,7 +228,9 @@ int main(int argc, char** argv) {
         freeAddresses(addresses, arrayletSize);
 
         // // 3. 4. Both copy arraylets into a separate array, modify this array to then copy it back to the heap
-        // copyModifyManualHeap(pagesize, arrayletSize, totalArraySize, arrayLetOffsets, heapMmap);
+        // char * allocArray = copyModifyManualHeap(pagesize, arrayletSize, totalArraySize, arrayLetOffsets, heapMmap);
+        // middleTime = timer.getElapsedMillis();
+        // freeAllocArray((void *)allocArray);
 
         perIter[i] = timer.getElapsedMillis() - lastTime;
         lastTime = timer.getElapsedMillis();
@@ -253,7 +259,7 @@ int main(int argc, char** argv) {
     //     std::cout << std::endl;
     // }
 
-    munmap(heapMmap, TWO_HUNDRED_56_MB);
+    munmap(heapMmap, FOUR_GB);
 
     return 0;
 }
