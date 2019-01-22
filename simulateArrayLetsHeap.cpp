@@ -29,10 +29,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
     if (contiguousMap == MAP_FAILED) {
       std::cerr << "Failed to mmap contiguousMap\n";
       return NULL;
-    } 
-    // else {
-    //   std::cout << "Successfully mmaped contiguousMap at address: " << (void *)contiguousMap << "\n";
-    // }
+    }
 
     addresses[ARRAYLET_COUNT] = contiguousMap;
 
@@ -49,10 +46,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
         if (addresses[i] == MAP_FAILED) {
             std::cerr << "Failed to mmap address[" << i << "] at mmapContiguous()\n";
             return NULL;
-        } 
-        // else {
-        //     std::cout << "Successfully mmaped leaf at address: " << (void *)addresses[i] << " :" << *addresses[i] << "\n";
-        // }
+        }
     }
 
      return contiguousMap;
@@ -145,9 +139,6 @@ int main(int argc, char** argv) {
 
     char * addresses[ARRAYLET_COUNT + 1];
 
-    // char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, addresses);
-    // modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
-
     for(size_t i = 0; i < iterations; i++) {
         // 3. Make Arraylets look contiguous with mmap
         char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, addresses);
@@ -176,12 +167,6 @@ int main(int argc, char** argv) {
     size_t avgIgnore = ignoreTotal / iterations;
     
     printResults(elapsedTime, ignoreTotal, avgPerIter, avgIgnore);
-    
-    // Print arraylets from heap
-    // for(size_t i = 0; i < ARRAYLET_COUNT; i++)
-    // {
-    //     std::cout << "heapMmap+arrayLetOffsets[" << i << "]: " << heapMmap+arrayLetOffsets[i] << '\n';
-    // }
 
     munmap(heapMmap, FOUR_GB);
 
