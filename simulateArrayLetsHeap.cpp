@@ -156,7 +156,8 @@ int main(int argc, char** argv) {
         modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
         // Free addresses
         middleTime = timer.getElapsedMillis();
-        freeAddresses(addresses, arrayletSize);
+
+        munmap(contiguousMap, totalArraySize);
 
         perIter[i] = timer.getElapsedMillis() - lastTime;
         lastTime = timer.getElapsedMillis();
