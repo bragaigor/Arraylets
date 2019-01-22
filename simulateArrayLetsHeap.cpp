@@ -34,9 +34,9 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
     addresses[ARRAYLET_COUNT] = contiguousMap;
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        
+       void *nextAddress = (void *)(contiguousMap+i*arrayletSize);
        addresses[i] = (char *)mmap(
-                   (void *)(contiguousMap+i*arrayletSize),
+                   nextAddress,
                    arrayletSize, // File size
                    PROT_READ|PROT_WRITE,
                    MAP_SHARED | MAP_FIXED,
@@ -45,7 +45,12 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
 
         if (addresses[i] == MAP_FAILED) {
             std::cerr << "Failed to mmap address[" << i << "] at mmapContiguous()\n";
-            return NULL;
+            munmap(contiguousMap, totalArraySize);
+            contiguousMap = NULL;
+        } else if (nextAddress != addresses[i]) {
+            std::cerr << "Map failed to provide the correct address. nextAddress " << nextAddress << " != " << addresses[i] << std::endl;
+            munmap(contiguousMap, totalArraySize);
+            contiguousMap = NULL;
         }
     }
 
