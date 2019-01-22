@@ -140,7 +140,7 @@ int main(int argc, char** argv) {
     ElapsedTimer timer;
     timer.startTimer();
     double perIter[iterations], ignoreTimes[iterations];
-    double lastTime = timer.getElapsedMillis();
+    double lastTime = timer.getElapsedMicros();
     double middleTime = lastTime;
 
     char * addresses[ARRAYLET_COUNT + 1];
@@ -155,16 +155,16 @@ int main(int argc, char** argv) {
         // 4. Modify contiguous memory view and observe change in the heap
         modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
         // Free addresses
-        middleTime = timer.getElapsedMillis();
+        middleTime = timer.getElapsedMicros();
 
         munmap(contiguousMap, totalArraySize);
 
-        perIter[i] = timer.getElapsedMillis() - lastTime;
-        lastTime = timer.getElapsedMillis();
+        perIter[i] = timer.getElapsedMicros() - lastTime;
+        lastTime = timer.getElapsedMicros();
         ignoreTimes[i] = lastTime - middleTime;
     }
 
-    int64_t elapsedTime = timer.getElapsedMillis();
+    int64_t elapsedTime = timer.getElapsedMicros();
 
     size_t perIterationSum = 0;
     size_t ignoreTotal = 0;

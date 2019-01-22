@@ -212,7 +212,7 @@ int main(int argc, char** argv) {
     // copyModifyManualHeap(pagesize, totalArraySize, arrayLetOffsets, heapMmap);
 
     timer.startTimer();
-    double lastTime = timer.getElapsedMillis();
+    double lastTime = timer.getElapsedMicros();
     double middleTime = lastTime;
 
     for(size_t i = 0; i < iterations; i++) {
@@ -224,20 +224,20 @@ int main(int argc, char** argv) {
         modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
 
         // Free addresses
-        middleTime = timer.getElapsedMillis();
+        middleTime = timer.getElapsedMicros();
         freeAddresses(addresses, arrayletSize);
 
         // // 3. 4. Both copy arraylets into a separate array, modify this array to then copy it back to the heap
         // char * allocArray = copyModifyManualHeap(pagesize, arrayletSize, totalArraySize, arrayLetOffsets, heapMmap);
-        // middleTime = timer.getElapsedMillis();
+        // middleTime = timer.getElapsedMicros();
         // freeAllocArray((void *)allocArray);
 
-        perIter[i] = timer.getElapsedMillis() - lastTime;
-        lastTime = timer.getElapsedMillis();
+        perIter[i] = timer.getElapsedMicros() - lastTime;
+        lastTime = timer.getElapsedMicros();
         ignoreTimes[i] = lastTime - middleTime;
     }
 
-    int64_t elapsedTime = timer.getElapsedMillis();
+    int64_t elapsedTime = timer.getElapsedMicros();
 
     size_t perIterationSum = 0;
     size_t ignoreTotal = 0;

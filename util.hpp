@@ -37,9 +37,9 @@ public:
         calledStart = true;
         start = std::chrono::high_resolution_clock::now();
     }
-    int64_t getElapsedMillis() {
+    int64_t getElapsedMicros() {
         if (!calledStart) {
-            std::cout << "ERROR: called getElapsedMillis without calling startTimer\n";
+            std::cout << "ERROR: called getElapsedMicros without calling startTimer\n";
             exit(1);
         }
         auto now = std::chrono::high_resolution_clock::now();
