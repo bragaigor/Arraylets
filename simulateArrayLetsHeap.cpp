@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
                 0);
 
     if (heapMmap == MAP_FAILED) {
-       std::cerr << "Failed to mmap\n";
+       std::cerr << "Failed to mmap " << strerror(errno) << "\n";
        return 1;
     } else {
        std::cout << "Successfully mmaped heap at address: " << (void *)heapMmap << "\n";
