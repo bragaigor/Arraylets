@@ -105,9 +105,6 @@ int main(int argc, char** argv) {
        std::cout << "Successfully mmaped heap at address: " << (void *)heapMmap << "\n";
     }
 
-    long * heapAddr = (long *)heapMmap;
-    std::cout << "Heap address converted to char* is: " << heapAddr+128 << std::endl;
-
     // Get page alligned offsets
     long arrayLetOffsets[ARRAYLET_COUNT];
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
