@@ -136,42 +136,43 @@ int main(int argc, char** argv) {
     std::cout << "Arraylets created successfully.\n";
     std::cout << "ArrayLets combined have size: " << totalArraySize << " bytes." << '\n';
 
+    char * addresses[ARRAYLET_COUNT + 1];
+    double totalMapTime = 0;
+    double totalModifyTime = 0;
+    double totalFreeTime = 0;
+
     ElapsedTimer timer;
     timer.startTimer();
-    double perIter[iterations], ignoreTimes[iterations];
-    double lastTime = timer.getElapsedMicros();
-    double middleTime = lastTime;
-
-    char * addresses[ARRAYLET_COUNT + 1];
 
     for(size_t i = 0; i < iterations; i++) {
+        double start = timer.getElapsedMicros();
         // 3. Make Arraylets look contiguous with mmap
         char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, addresses);
 
+        double mapEnd = timer.getElapsedMicros();
+
         // 4. Modify contiguous memory view and observe change in the heap
         modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
-        // Free addresses
-        middleTime = timer.getElapsedMicros();
 
+        double modifyEnd = timer.getElapsedMicros();
+
+        // Free addresses
         munmap(contiguousMap, totalArraySize);
 
-        perIter[i] = timer.getElapsedMicros() - lastTime;
-        lastTime = timer.getElapsedMicros();
-        ignoreTimes[i] = lastTime - middleTime;
+        double freeEnd = timer.getElapsedMicros();
+
+        totalMapTime += (mapEnd - start);
+        totalModifyTime += (modifyEnd - mapEnd);
+        totalFreeTime += (freeEnd - modifyEnd);
     }
 
     int64_t elapsedTime = timer.getElapsedMicros();
-
-    size_t perIterationSum = 0;
-    size_t ignoreTotal = 0;
-    for(size_t i = 0; i < iterations; i++) {
-        perIterationSum += perIter[i];
-        ignoreTotal += ignoreTimes[i];
-    }
-    size_t avgPerIter = perIterationSum / iterations;
-    size_t avgIgnore = ignoreTotal / iterations;
     
-    printResults(elapsedTime, ignoreTotal, avgPerIter, avgIgnore);
+    std::cout << "Test completed " << iterations << " iterations" << std::endl;
+    std::cout << "Total elapsed time " << elapsedTime << "us" << std::endl;
+    std::cout << "Total map time " << totalMapTime << "us AVG map time " << (totalMapTime / iterations) << "us" << std::endl;
+    std::cout << "Total modify time " << totalModifyTime << "us AVG modify time " << (totalModifyTime / iterations) << "us" << std::endl;
+    std::cout << "Total free time " << totalFreeTime << "us AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
 
     munmap(heapMmap, FOUR_GB);
 
