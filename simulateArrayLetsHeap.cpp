@@ -139,26 +139,34 @@ int main(int argc, char** argv) {
     ElapsedTimer timer;
     timer.startTimer();
 
-    for(size_t i = 0; i < iterations; i++) {
-        double start = timer.getElapsedMicros();
-        // 3. Make Arraylets look contiguous with mmap
-        char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh);
+    for(size_t i = 0; i < iterations / 10; i++) {
+        char *maps[10];
+        for (int j = 0; j < 10; j++) {
+            double start = timer.getElapsedMicros();
+            // 3. Make Arraylets look contiguous with mmap
+            maps[j] = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh);
 
-        double mapEnd = timer.getElapsedMicros();
+            double mapEnd = timer.getElapsedMicros();
 
-        // 4. Modify contiguous memory view and observe change in the heap
-        modifyContiguousMem(pagesize, arrayletSize, contiguousMap);
+            // 4. Modify contiguous memory view and observe change in the heap
+            modifyContiguousMem(pagesize, arrayletSize, maps[j]);
 
-        double modifyEnd = timer.getElapsedMicros();
+            double modifyEnd = timer.getElapsedMicros();
 
-        // Free addresses
-        munmap(contiguousMap, totalArraySize);
+            totalMapTime += (mapEnd - start);
+            totalModifyTime += (modifyEnd - mapEnd);
 
-        double freeEnd = timer.getElapsedMicros();
+        }
+        for (int j = 0; j < 10; j++) {
+            double freeStart = timer.getElapsedMicros();
 
-        totalMapTime += (mapEnd - start);
-        totalModifyTime += (modifyEnd - mapEnd);
-        totalFreeTime += (freeEnd - modifyEnd);
+            // Free addresses
+            munmap(maps[j], totalArraySize);
+
+            double freeEnd = timer.getElapsedMicros();
+
+            totalFreeTime += (freeEnd - freeStart);
+        }
     }
 
     int64_t elapsedTime = timer.getElapsedMicros();
