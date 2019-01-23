@@ -16,7 +16,7 @@
 // Note: Insert -lrt flag for linux systems
 // ./simulateArrayLetsHeap 12 1000
 
-char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], int fh, char * addresses[])
+char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], int fh)
    {
     char * contiguousMap = (char *)mmap(
                    NULL,
@@ -31,11 +31,9 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
       return NULL;
     }
 
-    addresses[ARRAYLET_COUNT] = contiguousMap;
-
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
        void *nextAddress = (void *)(contiguousMap+i*arrayletSize);
-       addresses[i] = (char *)mmap(
+       void *address = mmap(
                    nextAddress,
                    arrayletSize, // File size
                    PROT_READ|PROT_WRITE,
@@ -43,12 +41,12 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
                    fh,
                    arrayLetOffsets[i]);
 
-        if (addresses[i] == MAP_FAILED) {
+        if (address == MAP_FAILED) {
             std::cerr << "Failed to mmap address[" << i << "] at mmapContiguous()\n";
             munmap(contiguousMap, totalArraySize);
             contiguousMap = NULL;
-        } else if (nextAddress != addresses[i]) {
-            std::cerr << "Map failed to provide the correct address. nextAddress " << nextAddress << " != " << addresses[i] << std::endl;
+        } else if (nextAddress != address) {
+            std::cerr << "Map failed to provide the correct address. nextAddress " << nextAddress << " != " << address << std::endl;
             munmap(contiguousMap, totalArraySize);
             contiguousMap = NULL;
         }
@@ -136,7 +134,6 @@ int main(int argc, char** argv) {
     std::cout << "Arraylets created successfully.\n";
     std::cout << "ArrayLets combined have size: " << totalArraySize << " bytes." << '\n';
 
-    char * addresses[ARRAYLET_COUNT + 1];
     double totalMapTime = 0;
     double totalModifyTime = 0;
     double totalFreeTime = 0;
@@ -147,7 +144,7 @@ int main(int argc, char** argv) {
     for(size_t i = 0; i < iterations; i++) {
         double start = timer.getElapsedMicros();
         // 3. Make Arraylets look contiguous with mmap
-        char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, addresses);
+        char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh);
 
         double mapEnd = timer.getElapsedMicros();
 
