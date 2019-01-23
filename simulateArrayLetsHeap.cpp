@@ -115,19 +115,20 @@ int main(int argc, char** argv) {
        std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << '\n';
     }
 
-    char * tempNums[SIXTEEN] = {"33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF"};
-
-    char * nums[ARRAYLET_COUNT];
+    char vals[SIXTEEN] = {'3', '5', '6', '8', '9', '0', '1', '2', '3', '7', 'A', 'E', 'C', 'B', 'D', 'F'};
     
     size_t totalArraySize = 0;
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-       nums[i] = tempNums[i%SIXTEEN];
-       for (size_t j = 0; j < arrayletSize; j++) {
-          strncpy(heapMmap+arrayLetOffsets[i]+j, nums[i], 1);
-          totalArraySize++;
-       }
+        memset(heapMmap+arrayLetOffsets[i], vals[i%SIXTEEN], arrayletSize);
+        totalArraySize += arrayletSize;
     }
+
+    fprintf(stdout, "First 32 chars of data before mapping and modification of the double mapped addresses\n");
+    for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+        fprintf(stdout, "\tvals[%02lu] %.64s\n", i, heapMmap+arrayLetOffsets[i]);
+    }
+
     std::cout << "Arraylets created successfully.\n";
     std::cout << "ArrayLets combined have size: " << totalArraySize << " bytes." << '\n';
 
@@ -162,6 +163,12 @@ int main(int argc, char** argv) {
 
     int64_t elapsedTime = timer.getElapsedMicros();
     
+    fprintf(stdout, "First 32 chars of data after mapping and modification of the double mapped addresses\n");
+    for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+        char *arraylet = heapMmap+arrayLetOffsets[i];
+        fprintf(stdout, "\tvals[%02lu] %.64s\n", i, arraylet);
+    }
+
     std::cout << "Test completed " << iterations << " iterations" << std::endl;
     std::cout << "Total elapsed time " << elapsedTime << "us" << std::endl;
     std::cout << "Total map time " << totalMapTime << "us AVG map time " << (totalMapTime / iterations) << "us" << std::endl;
