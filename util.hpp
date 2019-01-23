@@ -37,9 +37,9 @@ public:
         calledStart = true;
         start = std::chrono::high_resolution_clock::now();
     }
-    int64_t getElapsedMillis() {
+    int64_t getElapsedMicros() {
         if (!calledStart) {
-            std::cout << "ERROR: called getElapsedMillis without calling startTimer\n";
+            std::cout << "ERROR: called getElapsedMicros without calling startTimer\n";
             exit(1);
         }
         auto now = std::chrono::high_resolution_clock::now();
@@ -80,15 +80,23 @@ size_t getArrayletSize(size_t pagesize)
    }
 
 void modifyContiguousMem(size_t pagesize, size_t arrayletSize, char * contiguousMap) 
-   {
+{
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-       for(size_t j = 0; j < 256; j++) {  
-            contiguousMap[i*arrayletSize+j] = '*';
-            contiguousMap[i*arrayletSize+(arrayletSize/4)+j] = '*';
-            contiguousMap[i*arrayletSize+(arrayletSize/2)+j] = '*';
-            }
-       }
-   }
+        /* Get the address representing the beginning of each arraylet */
+        char *arrayletData = contiguousMap + (i * arrayletSize);
+
+        /* write a pattern to the first page of each arraylet to verify proper mappings */
+        memset(arrayletData, '*', 32);
+        char *arrayletData2 = arrayletData + 48;
+        memset(arrayletData2, '*', arrayletSize - 48);
+
+        /* Write to the first byte of each of the other pages in the arraylet to ensure all pages are touched */
+        for (int j = 1; j < (arrayletSize / pagesize); j++) {
+            char *pageData = arrayletData + (j * pagesize);
+            *pageData = '*';
+        }
+    }
+}
 
 void freeAddresses(char * addresses[], size_t arrayletSize) 
    {
