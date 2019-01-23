@@ -79,6 +79,7 @@ int main(int argc, char** argv) {
     size_t pagesize = getpagesize(); // 4096 bytes
     std::cout << "System page size: " << pagesize << " bytes.\n";
     size_t arrayletSize = getArrayletSize(pagesize);
+    std::cout << "Arraylet size: " << arrayletSize << " bytes" << std::endl;
 
     char * filename = "temp.txt";
     int fh = shm_open(filename, O_RDWR | O_CREAT | O_EXCL, 0600);
@@ -113,7 +114,7 @@ int main(int argc, char** argv) {
     // Get page alligned offsets
     long arrayLetOffsets[ARRAYLET_COUNT];
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % FOUR_GB);
+        arrayLetOffsets[i] = getPageAlignedOffset(arrayletSize, rnd.nextNatural() % FOUR_GB);
     }
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
