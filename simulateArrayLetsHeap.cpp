@@ -62,15 +62,16 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
 
 int main(int argc, char** argv) {
 
-    if (argc != 3) {
-        std::cout<<"USAGE: " << argv[0] << " seed# iterations#" << std::endl;
-        std::cout << "Example: " << argv[0] << " 6363 50000" << std::endl;
+    if (argc != 4) {
+        std::cout<<"USAGE: " << argv[0] << " seed# iterations# debug<0,1>" << std::endl;
+        std::cout << "Example: " << argv[0] << " 6363 50000 0" << std::endl;
         return 1;
     }
     
     PaddedRandom rnd;
     int seed = atoi(argv[1]);
     int iterations = atoi(argv[2]);
+    int debug = atoi(argv[3]);
     rnd.setSeed(seed);
 
     size_t pagesize = getpagesize(); // 4096 bytes
@@ -124,9 +125,11 @@ int main(int argc, char** argv) {
         totalArraySize += arrayletSize;
     }
 
-    fprintf(stdout, "First 32 chars of data before mapping and modification of the double mapped addresses\n");
-    for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        fprintf(stdout, "\tvals[%02lu] %.64s\n", i, heapMmap+arrayLetOffsets[i]);
+    if (1 == debug) {
+        fprintf(stdout, "First 32 chars of data before mapping and modification of the double mapped addresses\n");
+        for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+            fprintf(stdout, "\tvals[%02lu] %.64s\n", i, heapMmap+arrayLetOffsets[i]);
+        }
     }
 
     std::cout << "Arraylets created successfully.\n";
@@ -171,10 +174,12 @@ int main(int argc, char** argv) {
 
     int64_t elapsedTime = timer.getElapsedMicros();
     
-    fprintf(stdout, "First 32 chars of data after mapping and modification of the double mapped addresses\n");
-    for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        char *arraylet = heapMmap+arrayLetOffsets[i];
-        fprintf(stdout, "\tvals[%02lu] %.64s\n", i, arraylet);
+    if (1 == debug) {
+        fprintf(stdout, "First 32 chars of data after mapping and modification of the double mapped addresses\n");
+        for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+            char *arraylet = heapMmap+arrayLetOffsets[i];
+            fprintf(stdout, "\tvals[%02lu] %.64s\n", i, arraylet);
+        }
     }
 
     std::cout << "Test completed " << iterations << " iterations" << std::endl;
