@@ -12,7 +12,10 @@
 // TODO run approach 1 on linux. Use Ubuntu 16.04 on docker
 
 // To run:
+// For MAC
 // g++ -g3 -Wno-write-strings -std=c++11 simulateArrayLetsHeap.cpp -o simulateArrayLetsHeap
+// For Linux with no c++11 support
+// g++ -g3 -Wno-write-strings -std=c++0x simulateArrayLetsHeap.cpp -o simulateArrayLetsHeap
 // Note: Insert -lrt flag for linux systems
 // ./simulateArrayLetsHeap 12 1000
 

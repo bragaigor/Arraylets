@@ -8,7 +8,10 @@
 #include "util.hpp"
 
 // To run:
+// For MAC
 // g++ -g3 -Wno-write-strings -std=c++11 simulateArrayLetsHeap2.cpp -o simulateArrayLetsHeap2
+// For Linux with no c++11 support
+// g++ -g3 -Wno-write-strings -std=c++0x simulateArrayLetsHeap2.cpp -o simulateArrayLetsHeap2
 // Note: Insert -lrt flag for linux systems
 // ./simulateArrayLetsHeap2 12 1000
 
@@ -171,7 +174,6 @@ int main(int argc, char** argv) {
     char * arrayletAddrs[ARRAYLET_COUNT];
     size_t totalArraySize = 0;
 
-
     char * tempNums[SIXTEEN] = {"33", "55", "66", "88", "99", "00", "11", "22", "33", "77", "AA", "EE", "CC", "BB", "DD", "FF"};
 
     char * arrayletNames[ARRAYLET_COUNT];
@@ -179,7 +181,7 @@ int main(int argc, char** argv) {
     long arrayLetOffsets[ARRAYLET_COUNT];
 
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        std::string numStr = std::to_string(i);
+        std::string numStr = std::to_string((long long int)i);
         numStr = "t" + numStr;
         arrayletNames[i] = strdup(numStr.c_str());
         nums[i] = tempNums[i%SIXTEEN];

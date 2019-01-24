@@ -36,11 +36,14 @@
 class ElapsedTimer {
 private:
     char padding0[PADDING_BYTES];
-    bool calledStart = false;
+    bool calledStart;
     char padding1[PADDING_BYTES];
     std::chrono::time_point<std::chrono::high_resolution_clock> start;
     char padding2[PADDING_BYTES];
 public:
+    ElapsedTimer() {
+        calledStart = false;
+    }
     void startTimer() {
         calledStart = true;
         start = std::chrono::high_resolution_clock::now();
