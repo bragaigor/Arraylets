@@ -16,13 +16,25 @@
 // Note: Insert -lrt flag for linux systems
 // ./simulateArrayLetsHeap 12 1000
 
-char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], int fh)
+char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], int fh, int32_t flags)
    {
+    int mmapProt = 0;
+	int mmapFlags = 0;
+
+    mmapProt = PROT_READ | PROT_WRITE;
+    if(flags & MMAP_FLAG_SHARED_ANON) {
+        mmapFlags = MAP_SHARED | MAP_ANON;
+    } else if(flags & MMAP_FLAG_PRIVATE_ANON) {
+        mmapFlags = MAP_PRIVATE | MAP_ANON;
+    } else {
+        std::cerr << "Flags parameter not recognized.\n";
+        return NULL;
+    }
     char * contiguousMap = (char *)mmap(
                    NULL,
                    totalArraySize, // File size
-                   PROT_READ|PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANON, // Must be shared
+                   mmapProt,
+                   mmapFlags, // Must be shared
                    -1,
                    0);
 
@@ -31,13 +43,15 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
       return NULL;
     }
 
+    mmapFlags = MAP_SHARED | MAP_FIXED;
+
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
        void *nextAddress = (void *)(contiguousMap+i*arrayletSize);
        void *address = mmap(
                    nextAddress,
                    arrayletSize, // File size
-                   PROT_READ|PROT_WRITE,
-                   MAP_SHARED | MAP_FIXED,
+                   mmapProt,
+                   mmapFlags,
                    fh,
                    arrayLetOffsets[i]);
 
@@ -91,11 +105,17 @@ int main(int argc, char** argv) {
     // Failing to allocate memory will result in a bus error on access.
     ftruncate(fh, FOUR_GB);
 
+    int mmapProt = 0;
+	int mmapFlags = 0;
+
+    mmapProt = PROT_READ | PROT_WRITE;
+    mmapFlags = MAP_SHARED;
+
     char * heapMmap = (char *)mmap(
                 NULL,
                 FOUR_GB, // File size
-                PROT_READ|PROT_WRITE,
-                MAP_SHARED, // Must be shared
+                mmapProt,
+                mmapFlags, // Must be shared
                 fh, // File handle
                 0);
 
@@ -147,7 +167,7 @@ int main(int argc, char** argv) {
         for (int j = 0; j < 10; j++) {
             double start = timer.getElapsedMicros();
             // 3. Make Arraylets look contiguous with mmap
-            maps[j] = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh);
+            maps[j] = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, MMAP_FLAG_PRIVATE_ANON);
 
             double mapEnd = timer.getElapsedMicros();
 
@@ -185,8 +205,8 @@ int main(int argc, char** argv) {
     std::cout << "Test completed " << iterations << " iterations" << std::endl;
     std::cout << "Total elapsed time " << elapsedTime << "us" << std::endl;
     std::cout << "Total map time " << totalMapTime << "us AVG map time " << (totalMapTime / iterations) << "us" << std::endl;
-    std::cout << "Total modify time " << totalModifyTime << "us AVG modify time " << (totalModifyTime / iterations) << "us" << std::endl;
-    std::cout << "Total free time " << totalFreeTime << "us AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
+    std::cout << "Total modify time " << totalModifyTime << "us (" << (totalModifyTime/1000000) << "s) AVG modify time " << (totalModifyTime / iterations) << "us" << std::endl;
+    std::cout << "Total free time " << totalFreeTime << "us (" << (totalFreeTime/1000000) << "s) AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
 
     munmap(heapMmap, FOUR_GB);
 

@@ -25,6 +25,14 @@
 #define SIXTY_FOUR_GB 68719476736 // 64GB
 #define PADDING_BYTES 128
 
+#define MMAP_FLAG_SHARED_ANON  1
+#define MMAP_FLAG_PRIVATE_ANON  2
+#define MMAP_FLAG_ANON_TLB  4
+#define MMAP_FLAG_SHARED 8
+#define MMAP_FLAG_SHARED_FIXED  16
+#define MMAP_FLAG_PRIVATE_FIXED  32
+
+
 class ElapsedTimer {
 private:
     char padding0[PADDING_BYTES];
@@ -88,7 +96,7 @@ void modifyContiguousMem(size_t pagesize, size_t arrayletSize, char * contiguous
         /* write a pattern to the first page of each arraylet to verify proper mappings */
         memset(arrayletData, '*', 32);
         char *arrayletData2 = arrayletData + 48;
-        memset(arrayletData2, '*', arrayletSize - 48);
+        memset(arrayletData2, '*', 16);
 
         /* Write to the first byte of each of the other pages in the arraylet to ensure all pages are touched */
         for (int j = 1; j < (arrayletSize / pagesize); j++) {

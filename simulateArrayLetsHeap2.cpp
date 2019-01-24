@@ -12,13 +12,25 @@
 // Note: Insert -lrt flag for linux systems
 // ./simulateArrayLetsHeap2 12 1000
 
-char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[], char * addresses[])
+char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[], char * addresses[], int32_t flags)
    {
+    int mmapProt = 0;
+	int mmapFlags = 0;
+
+    mmapProt = PROT_READ | PROT_WRITE;
+    if(flags & MMAP_FLAG_SHARED_ANON) {
+        mmapFlags = MAP_SHARED | MAP_ANON;
+    } else if(flags & MMAP_FLAG_PRIVATE_ANON) {
+        mmapFlags = MAP_PRIVATE | MAP_ANON;
+    } else {
+        std::cerr << "Flags parameter not recognized.\n";
+        return NULL;
+    }
     char * contiguousMap = (char *)mmap(
                    NULL,
                    totalArraySize, // File size
-                   PROT_READ|PROT_WRITE,
-                   MAP_SHARED | MAP_ANON, // Must be shared
+                   mmapProt,
+                   mmapFlags, // Must be shared
                    -1,
                    0);
 
@@ -31,14 +43,15 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, int fhs[], cha
     // }
     
     addresses[ARRAYLET_COUNT] = contiguousMap;
+    mmapFlags = MAP_SHARED | MAP_FIXED;
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
         
        addresses[i] = (char *)mmap(
                    (void *)(contiguousMap+i*arrayletSize),
                    arrayletSize, // File size
-                   PROT_READ|PROT_WRITE,
-                   MAP_SHARED | MAP_FIXED,
+                   mmapProt,
+                   mmapFlags,
                    fhs[i],
                    0);
 
@@ -131,11 +144,17 @@ int main(int argc, char** argv) {
     // 1. Simulate heap by allocating 256MB of memory
     //    No read, write or exec priviledges given 
 
+    int mmapProt = 0;
+	int mmapFlags = 0;
+
+    mmapProt = PROT_NONE;
+    mmapFlags = MAP_SHARED | MAP_ANON;
+
     char * heapMmap = (char *)mmap(
                 NULL,
                 FOUR_GB, // File size
-                PROT_NONE,
-                MAP_SHARED | MAP_ANON, // Must be shared
+                mmapProt,
+                mmapFlags, // Must be shared
                 -1, // File handle
                 0);
 
@@ -217,7 +236,7 @@ int main(int argc, char** argv) {
 
     for(size_t i = 0; i < iterations; i++) {
         // 3. Make Arraylets look contiguous with mmap
-        char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, fhs, addresses);
+        char * contiguousMap = mmapContiguous(totalArraySize, arrayletSize, fhs, addresses, MMAP_FLAG_SHARED_ANON);
 
         // ************************************************************************************************
         // 4. Modify contiguous memory view and observe change in the heap
