@@ -3,9 +3,12 @@
 
 #include <iostream>
 #include <string.h>
-#include <sysinfoapi.h>
 #include <tchar.h>
 #include <windows.h>
+
+// To run: open Developer Command Prompt for VS 2017
+// cl /EHsc simulateArrayLetsWindows.cpp
+// simulateArrayLetsWindows
 
 int main () {
 
@@ -16,9 +19,10 @@ int main () {
         << systemInfo.dwAllocationGranularity << std::endl;
     // result is 65536
 
-    std::size_t regionCount = 1000;
+    // std::size_t regionCount = 1000;
     ULARGE_INTEGER heapSize;
-    heapSize.QuadPart = 0x100000000; //4gb
+    // heapSize.QuadPart = 0x100000000; //4gb
+    heapSize.QuadPart = 0x40000000; // 1GB
 
     // Create the heap
     HANDLE heapHandle = CreateFileMapping(
@@ -96,7 +100,7 @@ int main () {
     }
 
     char *arrayletPtr = (char *)arraylet;
-    std::cout << andrarrayletPtrew[0] << " " << arrayletPtr[65536] << std::endl;
+    std::cout << arrayletPtr[0] << " " << arrayletPtr[65536] << std::endl;
     arrayletPtr[0] = 'c';
     arrayletPtr[65536]= 'd';
 
