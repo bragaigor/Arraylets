@@ -6,23 +6,41 @@
 #include <tchar.h>
 #include <windows.h>
 
+#define WINDOWS_ARRAYLET
+
+#include "util.hpp"
+
 // To run: open Developer Command Prompt for VS 2017
 // cl /EHsc simulateArrayLetsWindows.cpp
 // simulateArrayLetsWindows
 
-int main () {
+int main (int argc, char** argv) {
+	
+	if (argc != 3) {
+        std::cout<<"USAGE: " << argv[0] << " seed# debug<0,1>" << std::endl;
+        std::cout << "Example: " << argv[0] << " 6363 0" << std::endl;
+        return 1;
+    }
+	
+	PaddedRandom rnd;
+    int seed = atoi(argv[1]);
+	int debug = atoi(argv[2]);
+	rnd.setSeed(seed);
 
     SYSTEM_INFO systemInfo;
     GetSystemInfo(&systemInfo);
+	size_t pagesize = systemInfo.dwAllocationGranularity;
     std::cout
         << "MapViewOfFile must use an offset which is a multiple of " 
-        << systemInfo.dwAllocationGranularity << std::endl;
+        << pagesize << std::endl;
     // result is 65536
+	size_t arrayletSize = getArrayletSize(pagesize);
+    std::cout << "Arraylet size: " << arrayletSize << " bytes" << std::endl;
 
     // std::size_t regionCount = 1000;
     ULARGE_INTEGER heapSize;
-    // heapSize.QuadPart = 0x100000000; //4gb
-    heapSize.QuadPart = 0x40000000; // 1GB
+    // heapSize.QuadPart = FOUR_GB; //4gb
+    heapSize.QuadPart = ONE_GB; //1gb
 
     // Create the heap
     HANDLE heapHandle = CreateFileMapping(
@@ -38,6 +56,7 @@ int main () {
     }
     std::cout << "heapHandle=" << heapHandle << std::endl;
     
+    // Similar to mmap on POSIX
     void *heapPointer = MapViewOfFile(
         heapHandle,
         FILE_MAP_WRITE, // read and write access
@@ -53,22 +72,46 @@ int main () {
     // Commit 1 GB
     VirtualAlloc(
         heapPointer,
-        0x40000000, // 1 gb
+        ONE_GB, // 1 GB 
         MEM_COMMIT,
         PAGE_READWRITE);
+		
+	// Get page alligned offsets
+    long arrayLetOffsets[ARRAYLET_COUNT];
+    for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
+        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % ONE_GB); // Change pagesize to match HUGETLB size
+		std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << std::endl;
+    }
 
     // Create the arraylet
-    // fill in two regions of 64kb
-    std::cout << "writing arraylet" << std::endl;
-    memset(heapPointer, 'a', 65536);
-    memset((char*)heapPointer+65536, 'b', 65536);
+    // Fill in arralet leaf regions
+    std::cout << "Writing to arraylet leafs..." << std::endl;
+	
+	char vals[SIXTEEN] = {'3', '5', '6', '8', '9', '0', '1', '2', '3', '7', 'A', 'E', 'C', 'B', 'D', 'F'};
+    size_t totalArraySize = 0;
+	
+	for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+		memset((char*)heapPointer+arrayLetOffsets[i], vals[i%SIXTEEN], arrayletSize);
+		totalArraySize += arrayletSize;
+	}
+	std::cout << "Writing to arraylet leafs complete." << std::endl;
+    // memset(heapPointer, 'a', 65536);
+    // memset((char*)heapPointer+65536, 'b', 65536);
+	
+	if (1 == debug) {
+        fprintf(stdout, "First 48 chars of data BEFORE mapping and modification of the double mapped addresses\n");
+        for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+            char *heapPtr = (char*)heapPointer+arrayLetOffsets[i];
+            fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i], heapPtr);
+        }
+    }
 
-    // Create the arraylet
+    // Creates contiguous memory space for arraylets
     void *arraylet = VirtualAlloc(
-        NULL,
-        65536*2,
-        MEM_RESERVE,
-        PAGE_NOACCESS);
+        NULL,           	// addr
+        totalArraySize,		// size
+        MEM_RESERVE /* | MEM_LARGE_PAGES */,    // type flags 
+        PAGE_NOACCESS); 	// protection flags 
     if (arraylet == NULL) {
         std::cout << "Failed to commit arraylet\n";
         exit(1);
@@ -83,29 +126,68 @@ int main () {
     
     // ULARGE_INTEGER arrayletBase;
     // arrayletBase.QuadPart = arraylet;
-
-    for(int i = 0; i <= 1; i++) {
-        void *arrayletPointer = MapViewOfFileEx(
-            heapHandle,
-            FILE_MAP_WRITE, // read and write access
-            0,
-            i*65536,
-            65536,
-            (char*)arraylet+i*65536);
-        if (arrayletPointer == NULL) {
-            std::cout << "Failed to map arraylet[" << i << "] to " <<(void*) ((char*)arraylet+i*65536) << std::endl;
+	
+	for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+		void *arrayletPointer = MapViewOfFileEx(
+            heapHandle,     	// file handle
+            FILE_MAP_WRITE, 	// read and write access
+            0,              	// fileHandle heap offset high
+            arrayLetOffsets[i],	// fileHandle heap offset low
+            arrayletSize,		// number of bytes to map 
+            (char*)arraylet+i*arrayletSize);	// Offset into contiguous memory
+			
+		if (arrayletPointer == NULL) {
+            std::cout << "Failed to map arraylet[" << i << "] to " <<(void*) ((char*)arraylet+i*arrayletSize) << std::endl;
             // exit(1);
         }
-        std::cout << "arrayletPointer[" << i << "]=" << (void *)((char*)arraylet+i*65536) << std::endl;
-    }
+		std::cout << "Successfully mapped arrayletPointer[" << i << "]=" << (void *)((char*)arraylet+i*arrayletSize) << std::endl;
+	}
+	if (1 == debug) {
+		fprintf(stdout, "First 48 chars of data at contiguous block of memory BEFORE modification\n");
+		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			char *arrayletDebug = (char*)arraylet+i*arrayletSize;
+			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize, arrayletDebug);
+		}
+	}
+	
+	// TODO: Make it call to modifyContiguousMem() instead 
+	for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
+		/* Get the address representing the beginning of each arraylet */
+        char *arrayletData = (char*)arraylet + (i * arrayletSize);
+		/* write a pattern to the first page of each arraylet to verify proper mappings */
+        memset(arrayletData, '*', 32);
+        char *arrayletData2 = arrayletData + 48;
+        memset(arrayletData2, '*', 16);
+		/* Write to the first byte of each of the other pages in the arraylet to ensure all pages are touched */
+        for (int j = 1; j < (arrayletSize / pagesize); j++) {
+            char *pageData = (char*)arrayletData + (j * pagesize);
+            *pageData = '*';
+        }
+	}
+	
+	if (1 == debug) {
+		fprintf(stdout, "\n\t%48s\n\t%48s\n\t%48s\n\n", 
+						"*******************************************************",
+						"******** THE NEXT 2 OUTPUTS SHOULD MATCH! *************",
+						"*******************************************************");
+		fprintf(stdout, "First 48 chars of data at contiguous block of memory (2 first pages of each arraylet) AFTER modification:\n");
+		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			char *arrayletDebug = (char*)arraylet+i*arrayletSize;
+			char *arrayletDebug2 = (char*)arraylet+i*arrayletSize+pagesize;
+			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize, arrayletDebug);
+			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize+pagesize, arrayletDebug2);
+		}
+		std::cout << std::endl;
+		fprintf(stdout, "First 48 chars of data AFTER mapping and modification of the double mapped addresses:\n");
+		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			char *heapPtr = (char*)heapPointer+arrayLetOffsets[i];
+			char *heapPtr2 = (char*)heapPointer+arrayLetOffsets[i]+pagesize;
+			fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i], heapPtr);
+			fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i]+pagesize, heapPtr2);
+		}
+	}
 
-    char *arrayletPtr = (char *)arraylet;
-    std::cout << arrayletPtr[0] << " " << arrayletPtr[65536] << std::endl;
-    arrayletPtr[0] = 'c';
-    arrayletPtr[65536]= 'd';
-
-    char *heapPointer2 = (char *) heapPointer;
-    std::cout << heapPointer2[0] << " " << heapPointer2[65536] << std::endl;
+    CloseHandle(heapHandle);
 }
 
 #endif /* SIMULATE_ARRAYLETS_WINDOWS */

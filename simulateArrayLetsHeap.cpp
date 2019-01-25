@@ -5,6 +5,8 @@
 #include <fstream>
 #include <string>
 
+#define LINUX_ARRAYLET
+
 #include "util.hpp"
 
 // TODO try HUGE_TLB passed to mmap - MACOSX does not suport MAP_HUGETLB
@@ -132,15 +134,11 @@ int main(int argc, char** argv) {
     // Get page alligned offsets
     long arrayLetOffsets[ARRAYLET_COUNT];
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        arrayLetOffsets[i] = getPageAlignedOffset(arrayletSize, rnd.nextNatural() % FOUR_GB);
-    }
-
-    for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-       std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << '\n';
+        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % FOUR_GB); // Change pagesize to match HUGETLB size
+        std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << std::endl;
     }
 
     char vals[SIXTEEN] = {'3', '5', '6', '8', '9', '0', '1', '2', '3', '7', 'A', 'E', 'C', 'B', 'D', 'F'};
-    
     size_t totalArraySize = 0;
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
@@ -151,7 +149,7 @@ int main(int argc, char** argv) {
     if (1 == debug) {
         fprintf(stdout, "First 32 chars of data before mapping and modification of the double mapped addresses\n");
         for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-            fprintf(stdout, "\tvals[%02lu] %.64s\n", i, heapMmap+arrayLetOffsets[i]);
+            fprintf(stdout, "\tvals[%1lu] %.64s\n", i, heapMmap+arrayLetOffsets[i]);
         }
     }
 
