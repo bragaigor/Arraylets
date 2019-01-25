@@ -14,6 +14,53 @@
 // cl /EHsc simulateArrayLetsWindows.cpp
 // simulateArrayLetsWindows
 
+char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], HANDLE heapHandle, int debug) 
+   {
+    // Creates contiguous memory space for arraylets
+    void *arraylet = VirtualAlloc(
+        NULL,           	// addr
+        totalArraySize,		// size
+        MEM_RESERVE /* | MEM_LARGE_PAGES */,    // type flags 
+        PAGE_NOACCESS); 	// protection flags 
+    if (arraylet == NULL) {
+        std::cout << "Failed to commit arraylet\n";
+        exit(1);
+    }
+    std::cout << "arraylet=" << arraylet << std::endl;
+
+    // MUST free this address to map the file view
+    if (VirtualFree(arraylet, 0, MEM_RELEASE) == 0) {
+        std::cout << "Failed to free arraylet\n";
+    }
+    std::cout << "Free'd the region\n";
+	
+	for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+		void *arrayletPointer = MapViewOfFileEx(
+            heapHandle,     	// file handle
+            FILE_MAP_WRITE, 	// read and write access
+            0,              	// fileHandle heap offset high
+            arrayLetOffsets[i],	// fileHandle heap offset low
+            arrayletSize,		// number of bytes to map 
+            (char*)arraylet+i*arrayletSize);	// Offset into contiguous memory
+			
+		if (arrayletPointer == NULL) {
+            std::cout << "Failed to map arraylet[" << i << "] to " <<(void*) ((char*)arraylet+i*arrayletSize) << std::endl;
+            // exit(1);
+        }
+		std::cout << "Successfully mapped arrayletPointer[" << i << "]=" << (void *)((char*)arraylet+i*arrayletSize) << std::endl;
+	}
+	
+	if (1 == debug) {
+		fprintf(stdout, "First 48 chars of data at contiguous block of memory BEFORE modification\n");
+		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			char *arrayletDebug = (char*)arraylet+i*arrayletSize;
+			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize, arrayletDebug);
+		}
+	}
+	
+    return (char*) arraylet;
+   }
+
 int main (int argc, char** argv) {
 	
 	if (argc != 3) {
@@ -37,9 +84,7 @@ int main (int argc, char** argv) {
 	size_t arrayletSize = getArrayletSize(pagesize);
     std::cout << "Arraylet size: " << arrayletSize << " bytes" << std::endl;
 
-    // std::size_t regionCount = 1000;
     ULARGE_INTEGER heapSize;
-    // heapSize.QuadPart = FOUR_GB; //4gb
     heapSize.QuadPart = ONE_GB; //1gb
 
     // Create the heap
@@ -95,8 +140,6 @@ int main (int argc, char** argv) {
 		totalArraySize += arrayletSize;
 	}
 	std::cout << "Writing to arraylet leafs complete." << std::endl;
-    // memset(heapPointer, 'a', 65536);
-    // memset((char*)heapPointer+65536, 'b', 65536);
 	
 	if (1 == debug) {
         fprintf(stdout, "First 48 chars of data BEFORE mapping and modification of the double mapped addresses\n");
@@ -105,65 +148,14 @@ int main (int argc, char** argv) {
             fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i], heapPtr);
         }
     }
-
-    // Creates contiguous memory space for arraylets
-    void *arraylet = VirtualAlloc(
-        NULL,           	// addr
-        totalArraySize,		// size
-        MEM_RESERVE /* | MEM_LARGE_PAGES */,    // type flags 
-        PAGE_NOACCESS); 	// protection flags 
-    if (arraylet == NULL) {
-        std::cout << "Failed to commit arraylet\n";
-        exit(1);
-    }
-    std::cout << "arraylet=" << arraylet << std::endl;
-
-    // Must free this address to map the file view
-    if (VirtualFree(arraylet, 0, MEM_RELEASE) == 0) {
-        std::cout << "Failed to free arraylet\n";
-    }
-    std::cout << "Free'd the region\n";
-    
-    // ULARGE_INTEGER arrayletBase;
-    // arrayletBase.QuadPart = arraylet;
 	
-	for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-		void *arrayletPointer = MapViewOfFileEx(
-            heapHandle,     	// file handle
-            FILE_MAP_WRITE, 	// read and write access
-            0,              	// fileHandle heap offset high
-            arrayLetOffsets[i],	// fileHandle heap offset low
-            arrayletSize,		// number of bytes to map 
-            (char*)arraylet+i*arrayletSize);	// Offset into contiguous memory
-			
-		if (arrayletPointer == NULL) {
-            std::cout << "Failed to map arraylet[" << i << "] to " <<(void*) ((char*)arraylet+i*arrayletSize) << std::endl;
-            // exit(1);
-        }
-		std::cout << "Successfully mapped arrayletPointer[" << i << "]=" << (void *)((char*)arraylet+i*arrayletSize) << std::endl;
-	}
-	if (1 == debug) {
-		fprintf(stdout, "First 48 chars of data at contiguous block of memory BEFORE modification\n");
-		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-			char *arrayletDebug = (char*)arraylet+i*arrayletSize;
-			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize, arrayletDebug);
-		}
-	}
+	// TODO: Put the next two calls in a loop of iterations passed in as a parameter to the cli
+	//		 Measure time taken to allocate memory and free the same. 
+	// Make Arraylets look contiguous with VirtualAlloc
+	char* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug);
 	
-	// TODO: Make it call to modifyContiguousMem() instead 
-	for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-		/* Get the address representing the beginning of each arraylet */
-        char *arrayletData = (char*)arraylet + (i * arrayletSize);
-		/* write a pattern to the first page of each arraylet to verify proper mappings */
-        memset(arrayletData, '*', 32);
-        char *arrayletData2 = arrayletData + 48;
-        memset(arrayletData2, '*', 16);
-		/* Write to the first byte of each of the other pages in the arraylet to ensure all pages are touched */
-        for (int j = 1; j < (arrayletSize / pagesize); j++) {
-            char *pageData = (char*)arrayletData + (j * pagesize);
-            *pageData = '*';
-        }
-	}
+	// Modify contiguous memory view and observe change in the heap
+	modifyContiguousMem(pagesize, arrayletSize, contiguous);
 	
 	if (1 == debug) {
 		fprintf(stdout, "\n\t%48s\n\t%48s\n\t%48s\n\n", 
@@ -172,8 +164,8 @@ int main (int argc, char** argv) {
 						"*******************************************************");
 		fprintf(stdout, "First 48 chars of data at contiguous block of memory (2 first pages of each arraylet) AFTER modification:\n");
 		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-			char *arrayletDebug = (char*)arraylet+i*arrayletSize;
-			char *arrayletDebug2 = (char*)arraylet+i*arrayletSize+pagesize;
+			char *arrayletDebug = (char*)contiguous+i*arrayletSize;
+			char *arrayletDebug2 = (char*)contiguous+i*arrayletSize+pagesize;
 			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize, arrayletDebug);
 			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize+pagesize, arrayletDebug2);
 		}

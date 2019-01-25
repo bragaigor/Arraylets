@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
         fprintf(stdout, "First 32 chars of data after mapping and modification of the double mapped addresses\n");
         for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
             char *arraylet = heapMmap+arrayLetOffsets[i];
-            fprintf(stdout, "\tvals[%02lu] %.64s\n", i, arraylet);
+            fprintf(stdout, "\theap[%1lu] %.64s\n", i, arraylet);
         }
     }
 
