@@ -5,6 +5,7 @@
 #include <string.h>
 #include <tchar.h>
 #include <windows.h>
+#include <inttypes.h>
 
 #define WINDOWS_ARRAYLET
 
@@ -14,7 +15,7 @@
 // cl /EHsc simulateArrayLetsWindows.cpp
 // simulateArrayLetsWindows
 
-char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], HANDLE heapHandle, int debug) 
+void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], HANDLE heapHandle, int debug) 
    {
     // Creates contiguous memory space for arraylets
     void *arraylet = VirtualAlloc(
@@ -23,16 +24,16 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
         MEM_RESERVE /* | MEM_LARGE_PAGES */,    // type flags 
         PAGE_NOACCESS); 	// protection flags 
     if (arraylet == NULL) {
-        std::cout << "Failed to commit arraylet\n";
+        std::cout << "Failed to commit contiguous block of memory\n";
         exit(1);
     }
-    std::cout << "arraylet=" << arraylet << std::endl;
+    // std::cout << "arraylet=" << arraylet << std::endl;
 
     // MUST free this address to map the file view
     if (VirtualFree(arraylet, 0, MEM_RELEASE) == 0) {
         std::cout << "Failed to free arraylet\n";
     }
-    std::cout << "Free'd the region\n";
+    // std::cout << "Free'd the region\n";
 	
 	for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
 		void *arrayletPointer = MapViewOfFileEx(
@@ -47,7 +48,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
             std::cout << "Failed to map arraylet[" << i << "] to " <<(void*) ((char*)arraylet+i*arrayletSize) << std::endl;
             // exit(1);
         }
-		std::cout << "Successfully mapped arrayletPointer[" << i << "]=" << (void *)((char*)arraylet+i*arrayletSize) << std::endl;
+		// std::cout << "Successfully mapped arrayletPointer[" << i << "]=" << (void *)((char*)arraylet+i*arrayletSize) << std::endl;
 	}
 	
 	if (1 == debug) {
@@ -58,20 +59,21 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
 		}
 	}
 	
-    return (char*) arraylet;
+    return arraylet;
    }
 
 int main (int argc, char** argv) {
 	
-	if (argc != 3) {
-        std::cout<<"USAGE: " << argv[0] << " seed# debug<0,1>" << std::endl;
+	if (argc != 4) {
+        std::cout<<"USAGE: " << argv[0] << " seed# iterations# debug<0,1>" << std::endl;
         std::cout << "Example: " << argv[0] << " 6363 0" << std::endl;
         return 1;
     }
 	
 	PaddedRandom rnd;
     int seed = atoi(argv[1]);
-	int debug = atoi(argv[2]);
+	int iterations = atoi(argv[2]);
+	int debug = atoi(argv[3]);
 	rnd.setSeed(seed);
 
     SYSTEM_INFO systemInfo;
@@ -110,6 +112,7 @@ int main (int argc, char** argv) {
         heapSize.QuadPart);
     if (heapPointer == NULL) {
         std::cout << "Failed to commit heap\n";
+		std::cout << "Failed to commit heap. Error: " << GetLastError() << "\n";
         exit(1);
     }
     std::cout << "heapPointer=" << heapPointer << std::endl;
@@ -149,15 +152,33 @@ int main (int argc, char** argv) {
         }
     }
 	
-	// TODO: Put the next two calls in a loop of iterations passed in as a parameter to the cli
-	//		 Measure time taken to allocate memory and free the same. 
-	// Make Arraylets look contiguous with VirtualAlloc
-	char* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug);
-	
-	// Modify contiguous memory view and observe change in the heap
-	modifyContiguousMem(pagesize, arrayletSize, contiguous);
-	
-	if (1 == debug) {
+	if(debug != 1) {
+		
+		ElapsedTimer timer;
+		timer.startTimer();
+		
+		// LIMIT: 492 iterations. 
+		for(size_t i = 0; i < iterations; i++) {
+			// Make Arraylets look contiguous with VirtualAlloc
+			void* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug);
+			
+			// Modify contiguous memory view and observe change in the heap
+			modifyContiguousMem(pagesize, arrayletSize, (char*)contiguous);
+		}
+		
+		int64_t elapsedTime = timer.getElapsedMicros();
+		double avgPerIter = (double)elapsedTime / iterations;
+		fprintf(stdout, "Total time spent to create and modify both contiguous and heap locations: %" PRId64 " microseconds (%.4f seconds)\n",
+					elapsedTime, elapsedTime/1000000.0);
+		fprintf(stdout, "Total Average iteration time: %.3f microseconds.\n", avgPerIter);
+		
+	} else {
+		// Make Arraylets look contiguous with VirtualAlloc
+		void* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug);
+		
+		// Modify contiguous memory view and observe change in the heap
+		modifyContiguousMem(pagesize, arrayletSize, (char*)contiguous);
+		
 		fprintf(stdout, "\n\t%48s\n\t%48s\n\t%48s\n\n", 
 						"*******************************************************",
 						"******** THE NEXT 2 OUTPUTS SHOULD MATCH! *************",
