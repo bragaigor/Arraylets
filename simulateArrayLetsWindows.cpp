@@ -13,9 +13,9 @@
 
 // To run: open Developer Command Prompt for VS 2017
 // cl /EHsc simulateArrayLetsWindows.cpp
-// simulateArrayLetsWindows
+// simulateArrayLetsWindows 1432 100 0
 
-void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], HANDLE heapHandle, int debug) 
+void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], HANDLE heapHandle, int debug, void* arrayletViews[]) 
    {
     // Creates contiguous memory space for arraylets
     void *arraylet = VirtualAlloc(
@@ -27,16 +27,14 @@ void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
         std::cout << "Failed to commit contiguous block of memory\n";
         exit(1);
     }
-    // std::cout << "arraylet=" << arraylet << std::endl;
 
     // MUST free this address to map the file view
     if (VirtualFree(arraylet, 0, MEM_RELEASE) == 0) {
         std::cout << "Failed to free arraylet\n";
     }
-    // std::cout << "Free'd the region\n";
-	
+
 	for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-		void *arrayletPointer = MapViewOfFileEx(
+		arrayletViews[i] = MapViewOfFileEx(
             heapHandle,     	// file handle
             FILE_MAP_WRITE, 	// read and write access
             0,              	// fileHandle heap offset high
@@ -44,11 +42,11 @@ void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
             arrayletSize,		// number of bytes to map 
             (char*)arraylet+i*arrayletSize);	// Offset into contiguous memory
 			
-		if (arrayletPointer == NULL) {
+		if (arrayletViews[i] == NULL) {
             std::cout << "Failed to map arraylet[" << i << "] to " <<(void*) ((char*)arraylet+i*arrayletSize) << std::endl;
-            // exit(1);
+            exit(1);
         }
-		// std::cout << "Successfully mapped arrayletPointer[" << i << "]=" << (void *)((char*)arraylet+i*arrayletSize) << std::endl;
+		// std::cout << "Successfully mapped arrayletViews[" << i << "]=" << (void *)((char*)arraylet+i*arrayletSize) << std::endl;
 	}
 	
 	if (1 == debug) {
@@ -62,11 +60,21 @@ void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
     return arraylet;
    }
 
+void freeArrayletViews(void* arrayletViews[])
+   {
+   for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+		if(UnmapViewOfFile(arrayletViews[i]) == 0){
+			std::cout << "Failed to unmap View of File at arraylet leaf: " << i << ".\n";
+			exit(1);
+		}
+	}
+   }
+
 int main (int argc, char** argv) {
 	
 	if (argc != 4) {
         std::cout<<"USAGE: " << argv[0] << " seed# iterations# debug<0,1>" << std::endl;
-        std::cout << "Example: " << argv[0] << " 6363 0" << std::endl;
+        std::cout << "Example: " << argv[0] << " 6363 100 0" << std::endl;
         return 1;
     }
 	
@@ -143,6 +151,7 @@ int main (int argc, char** argv) {
 		totalArraySize += arrayletSize;
 	}
 	std::cout << "Writing to arraylet leafs complete." << std::endl;
+	std::cout << "Total arraylet size: " << totalArraySize << std::endl;
 	
 	if (1 == debug) {
         fprintf(stdout, "First 48 chars of data BEFORE mapping and modification of the double mapped addresses\n");
@@ -151,30 +160,54 @@ int main (int argc, char** argv) {
             fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i], heapPtr);
         }
     }
-	
+
+	void* arrayletViews[ARRAYLET_COUNT];
+
 	if(debug != 1) {
-		
+
+        double totalMapTime = 0;
+        double totalModifyTime = 0;
+        double totalFreeTime = 0;
+
 		ElapsedTimer timer;
 		timer.startTimer();
 		
+        double freeEnd = timer.getElapsedMicros();
 		// LIMIT: 492 iterations. 
-		for(size_t i = 0; i < iterations; i++) {
+		for(size_t i = 0, j = 0; i < iterations; i++, j++) {
 			// Make Arraylets look contiguous with VirtualAlloc
-			void* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug);
+			void* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug, arrayletViews);
 			
+            double mapEnd = timer.getElapsedMicros();
+
 			// Modify contiguous memory view and observe change in the heap
 			modifyContiguousMem(pagesize, arrayletSize, (char*)contiguous);
+
+            double modifyEnd = timer.getElapsedMicros();
+
+            freeArrayletViews(arrayletViews);
+            
+            totalMapTime += (mapEnd - freeEnd);
+            
+            freeEnd = timer.getElapsedMicros();
+            
+            totalModifyTime += (modifyEnd - mapEnd);
+            totalFreeTime += (freeEnd - modifyEnd);
 		}
 		
 		int64_t elapsedTime = timer.getElapsedMicros();
 		double avgPerIter = (double)elapsedTime / iterations;
-		fprintf(stdout, "Total time spent to create and modify both contiguous and heap locations: %" PRId64 " microseconds (%.4f seconds)\n",
-					elapsedTime, elapsedTime/1000000.0);
-		fprintf(stdout, "Total Average iteration time: %.3f microseconds.\n", avgPerIter);
+		std::cout << "Total Average iteration time: " << avgPerIter << " microseconds.\n";
+        std::cout << "Test completed " << iterations << " iterations" << std::endl;
+        std::cout << "Total elapsed time " << elapsedTime << "us (" << elapsedTime/1000000.0 << "s)" << std::endl;
+        std::cout << "Total map time " << totalMapTime << "us (" << (totalMapTime/1000000) << "s) AVG map time " << (totalMapTime / iterations) << "us" << std::endl;
+        std::cout << "Total modify time " << totalModifyTime << "us (" << (totalModifyTime/1000000) << "s) AVG modify time " << (totalModifyTime / iterations) << "us" << std::endl;
+        std::cout << "Total free time " << totalFreeTime << "us (" << (totalFreeTime/1000000) << "s) AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
+
 		
 	} else {
 		// Make Arraylets look contiguous with VirtualAlloc
-		void* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug);
+		void* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug, arrayletViews);
 		
 		// Modify contiguous memory view and observe change in the heap
 		modifyContiguousMem(pagesize, arrayletSize, (char*)contiguous);
@@ -200,6 +233,10 @@ int main (int argc, char** argv) {
 		}
 	}
 
+    if(UnmapViewOfFile(heapPointer) == 0){
+        std::cout << "Failed to unmap heap pointer.\n";
+        exit(1);
+    }
     CloseHandle(heapHandle);
 }
 
