@@ -5,11 +5,9 @@
 #include <fstream>
 #include <string>
 
-#include "util.hpp"
+#define LINUX_ARRAYLET
 
-// TODO try HUGE_TLB passed to mmap - MACOSX does not suport MAP_HUGETLB
-// TODO Code cleanup
-// TODO run approach 1 on linux. Use Ubuntu 16.04 on docker
+#include "util.hpp"
 
 // To run:
 // For MAC
@@ -17,10 +15,11 @@
 // For Linux with no c++11 support
 // g++ -g3 -Wno-write-strings -std=c++0x simulateArrayLetsHeap.cpp -o simulateArrayLetsHeap
 // Note: Insert -lrt flag for linux systems
-// ./simulateArrayLetsHeap 12 1000
+// ./simulateArrayLetsHeap 12 1000 0
 
 char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], int fh, int32_t flags)
    {
+    // std::cout << "Calling mmapContiguous!!!\n"; 
     int mmapProt = 0;
 	int mmapFlags = 0;
 
@@ -64,9 +63,17 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
             contiguousMap = NULL;
         } else if (nextAddress != address) {
             std::cerr << "Map failed to provide the correct address. nextAddress " << nextAddress << " != " << address << std::endl;
+            printf("Map failed to provide the correct address. nextAddress %p != %p\n", nextAddress, address);
             munmap(contiguousMap, totalArraySize);
             contiguousMap = NULL;
         }
+
+        /*
+         * @param: Address
+         * @param: compile-time constant, 0 -> prepare for a read, 1 -> prepare for a write
+         * @param: degree of temporal locality -> val between 0 - 3. Priority of which data needs to be left in cache. low - high
+         */
+         // __builtin_prefetch(address, 1 ,0);
     }
 
      return contiguousMap;
@@ -96,29 +103,58 @@ int main(int argc, char** argv) {
     size_t arrayletSize = getArrayletSize(pagesize);
     std::cout << "Arraylet size: " << arrayletSize << " bytes" << std::endl;
 
-    char * filename = "temp.txt";
-    int fh = shm_open(filename, O_RDWR | O_CREAT | O_EXCL, 0600);
+	/*
+	 * TODO: * Use std::tmpnam(nullptr) to create temporary file name
+	 * 	   test with and without unlink to check if file is properly disposed/
+	 * 		Answer: Documentation warns not to use it because of security risks. Up to 26 possible file names only
+	 * 	 * Change shm_open to "open"
+	 * 	 * Change shm_unlink to "unlink"
+	 *	 	Answer: It does not work! Program hangs while trying to double map arraylets. 
+	 * 	 * Check if heap mmap works with MAP_PRIVATE, using open and unlink
+	 * 	 	Answer: It does work, however arraylet leaves must be mapped using MAP_SHARED 
+	 * 		        (a lot faster than if they were MAP_PRIVATE)
+	 * 	 * Chech mkstemp returns a file descriptor!
+	 * 		Answer: same problem as open() (mkstemp calls open())
+	 * 	 * Check memfd_create()
+	 * 		Answer: sys/memfd.h not available
+	 */
+
+    int fileSize = 20;
+    char filename[fileSize];
+    int p = getpid();
+    size_t pid_size = 10;
+    char int_str[pid_size];
+    sprintf(int_str, "%09d", p); // Max pid in 64bit system is 4194304
+    std::cout << "Process ID: " << p << std::endl;
+    strcpy(filename, "tempfile");
+    strcat(filename, int_str);
+    filename[fileSize - 1] = '\0';
+    std::cout << "Filename generated: " << filename << std::endl;
+
+    // int fh = shm_open(filename, O_RDWR | O_CREAT | O_EXCL, 0600);
+    int fh = open(filename, O_RDWR | O_CREAT);
     if (fh == -1) {
-      std::cerr << "Error while reading file" << filename << "\n";
+      std::cerr << "Error while reading file " << filename << "\n";
       return 1;
     }
-    shm_unlink(filename);
+    // shm_unlink(filename);
+    unlink(filename);
 
     // Sets the desired size to be allocated
     // Failing to allocate memory will result in a bus error on access.
-    ftruncate(fh, FOUR_GB);
+    ftruncate(fh, ONE_GB);
 
     int mmapProt = 0;
-	int mmapFlags = 0;
+    int mmapFlags = 0;
 
     mmapProt = PROT_READ | PROT_WRITE;
-    mmapFlags = MAP_SHARED;
+    mmapFlags = MAP_PRIVATE;
 
     char * heapMmap = (char *)mmap(
                 NULL,
-                FOUR_GB, // File size
+                ONE_GB, // File size
                 mmapProt,
-                mmapFlags, // Must be shared
+                mmapFlags, 
                 fh, // File handle
                 0);
 
@@ -132,15 +168,11 @@ int main(int argc, char** argv) {
     // Get page alligned offsets
     long arrayLetOffsets[ARRAYLET_COUNT];
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        arrayLetOffsets[i] = getPageAlignedOffset(arrayletSize, rnd.nextNatural() % FOUR_GB);
-    }
-
-    for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-       std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << '\n';
+        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % ONE_GB); // Change pagesize to match HUGETLB size
+        std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << std::endl;
     }
 
     char vals[SIXTEEN] = {'3', '5', '6', '8', '9', '0', '1', '2', '3', '7', 'A', 'E', 'C', 'B', 'D', 'F'};
-    
     size_t totalArraySize = 0;
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
@@ -151,7 +183,7 @@ int main(int argc, char** argv) {
     if (1 == debug) {
         fprintf(stdout, "First 32 chars of data before mapping and modification of the double mapped addresses\n");
         for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-            fprintf(stdout, "\tvals[%02lu] %.64s\n", i, heapMmap+arrayLetOffsets[i]);
+            fprintf(stdout, "\tvals[%1lu] %.64s\n", i, heapMmap+arrayLetOffsets[i]);
         }
     }
 
@@ -193,6 +225,8 @@ int main(int argc, char** argv) {
 
             totalFreeTime += (freeEnd - freeStart);
         }
+
+        // std::cout << "length of maps: " << (sizeof(maps)/sizeof(*maps)) << " :: " << (*(&maps + 1) - maps) <<  std::endl;
     }
 
     int64_t elapsedTime = timer.getElapsedMicros();
@@ -201,7 +235,7 @@ int main(int argc, char** argv) {
         fprintf(stdout, "First 32 chars of data after mapping and modification of the double mapped addresses\n");
         for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
             char *arraylet = heapMmap+arrayLetOffsets[i];
-            fprintf(stdout, "\tvals[%02lu] %.64s\n", i, arraylet);
+            fprintf(stdout, "\theap[%1lu] %.64s\n", i, arraylet);
         }
     }
 
@@ -211,9 +245,10 @@ int main(int argc, char** argv) {
     std::cout << "Total modify time " << totalModifyTime << "us (" << (totalModifyTime/1000000) << "s) AVG modify time " << (totalModifyTime / iterations) << "us" << std::endl;
     std::cout << "Total free time " << totalFreeTime << "us (" << (totalFreeTime/1000000) << "s) AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
 
-    munmap(heapMmap, FOUR_GB);
+    munmap(heapMmap, ONE_GB);
 
     return 0;
 }
 
 #endif /* SIMULATE_ARRAYLETS_HEAP */
+
