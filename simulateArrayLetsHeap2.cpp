@@ -5,6 +5,8 @@
 #include <fstream>
 #include <string>
 
+#define LINUX_ARRAYLET
+
 #include "util.hpp"
 
 // To run:

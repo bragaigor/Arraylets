@@ -1,20 +1,25 @@
 #ifndef UTIL_H
 #define UTIL_H
 
-#include <sys/types.h>
+#ifdef LINUX_ARRAYLET
+
 #include <sys/mman.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <unistd.h>
+
+#endif
+
+#include <sys/types.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <unistd.h>
 
 #include <chrono>
 #include <iostream>
 #include <cstring>
 
-#define ARRAYLET_COUNT 16
-#define ARRAYLET_SIZE_CONST 16 * 16 * 4 // (pagesize)4096 * ARRAYLET_SIZE_CONST: 64 KB
+#define ARRAYLET_COUNT 8
+#define ARRAYLET_SIZE_CONST 4 // (pagesize)4096(POSIX) | 65536(Windows) * ARRAYLET_SIZE_CONST: 64 KB
 #define SIXTEEN 16
 #define TWO_HUNDRED_56_MB 268435456
 #define ONE_GB 1073741824 // 1GB
@@ -109,6 +114,7 @@ void modifyContiguousMem(size_t pagesize, size_t arrayletSize, char * contiguous
     }
 }
 
+#ifdef LINUX_ARRAYLET
 void freeAddresses(char * addresses[], size_t arrayletSize) 
    {
     for (size_t i = 0; i < ARRAYLET_COUNT+1; i++) {
@@ -116,6 +122,7 @@ void freeAddresses(char * addresses[], size_t arrayletSize)
         munmap(addresses[i], arrayletSize);
     }
    }
+#endif
 
 void freeAllocArray(void * allocArray)
    {
