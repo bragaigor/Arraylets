@@ -17,6 +17,15 @@
 // Note: Insert -lrt flag for linux systems
 // ./simulateArrayLetsHeap 12 1000 0
 
+void
+getAddressesOffset(int addressesCount, long *offsets)
+{
+   for(int i = 0; i < addressesCount; i++)
+   {
+       offsets[i] = i*i;
+   }
+}
+
 char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], int fh, int32_t flags)
    {
     // std::cout << "Calling mmapContiguous!!!\n"; 
@@ -35,8 +44,8 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
     char * contiguousMap = (char *)mmap(
                    NULL,
                    totalArraySize, // File size
-                   mmapProt,
-                   mmapFlags, // Must be shared
+                   PROT_READ | PROT_WRITE,
+                   MAP_SHARED | MAP_ANON, // Must be shared
                    -1,
                    0);
 
@@ -50,10 +59,10 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
        void *nextAddress = (void *)(contiguousMap+i*arrayletSize);
        void *address = mmap(
-                   nextAddress,
+                   (void *)(contiguousMap+i*arrayletSize),
                    arrayletSize, // File size
-                   mmapProt,
-                   mmapFlags,
+                   PROT_READ | PROT_WRITE,
+                   MAP_SHARED | MAP_FIXED,
                    fh,
                    arrayLetOffsets[i]);
 
@@ -119,26 +128,28 @@ int main(int argc, char** argv) {
 	 * 		Answer: sys/memfd.h not available
 	 */
 
-    int fileSize = 20;
+    int fileSize = 32;
     char filename[fileSize];
+    // strcpy(filename, "tempfile0000000");
     int p = getpid();
-    size_t pid_size = 10;
-    char int_str[pid_size];
-    sprintf(int_str, "%09d", p); // Max pid in 64bit system is 4194304
+    char int_str[fileSize/2 + 1];
+    sprintf(filename, "tempfile%09d", p); // Max pid in 64bit system is 4194304
     std::cout << "Process ID: " << p << std::endl;
-    strcpy(filename, "tempfile");
-    strcat(filename, int_str);
-    filename[fileSize - 1] = '\0';
+    // strcat(filename, int_str);
+    // filename[fileSize - 1] = '\0';
     std::cout << "Filename generated: " << filename << std::endl;
 
+    std::cout << "pthread_self(): " << pthread_self() << std::endl;
+    std::cout << "(size_t)pthread_self(): " << (uint64_t)pthread_self() << std::endl;
+
     // int fh = shm_open(filename, O_RDWR | O_CREAT | O_EXCL, 0600);
-    int fh = open(filename, O_RDWR | O_CREAT);
+    int fh = shm_open(filename, O_RDWR | O_CREAT, 0600);
     if (fh == -1) {
       std::cerr << "Error while reading file " << filename << "\n";
       return 1;
     }
     // shm_unlink(filename);
-    unlink(filename);
+    shm_unlink(filename);
 
     // Sets the desired size to be allocated
     // Failing to allocate memory will result in a bus error on access.
@@ -148,7 +159,7 @@ int main(int argc, char** argv) {
     int mmapFlags = 0;
 
     mmapProt = PROT_READ | PROT_WRITE;
-    mmapFlags = MAP_PRIVATE;
+    mmapFlags = MAP_SHARED;
 
     char * heapMmap = (char *)mmap(
                 NULL,
@@ -175,10 +186,16 @@ int main(int argc, char** argv) {
     char vals[SIXTEEN] = {'3', '5', '6', '8', '9', '0', '1', '2', '3', '7', 'A', 'E', 'C', 'B', 'D', 'F'};
     size_t totalArraySize = 0;
 
+    std::cout << "************************************************\n";
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
         memset(heapMmap+arrayLetOffsets[i], vals[i%SIXTEEN], arrayletSize);
         totalArraySize += arrayletSize;
+        void *baseAddress = heapMmap;
+        void *arrayletAddress = heapMmap+arrayLetOffsets[i];
+        long offset = (char *)arrayletAddress - (char *)baseAddress;
+        std::cout << "Arralylet recheck " << i << " has offset: " << offset*sizeof(char) << std::endl;
     }
+    std::cout << "************************************************\n";
 
     if (1 == debug) {
         fprintf(stdout, "First 32 chars of data before mapping and modification of the double mapped addresses\n");
@@ -193,45 +210,64 @@ int main(int argc, char** argv) {
     double totalMapTime = 0;
     double totalModifyTime = 0;
     double totalFreeTime = 0;
+    char * contiguous = NULL;
 
     ElapsedTimer timer;
     timer.startTimer();
 
-    for(size_t i = 0; i < iterations / 10; i++) {
-        char *maps[10];
-        for (int j = 0; j < 10; j++) {
-            double start = timer.getElapsedMicros();
-            // 3. Make Arraylets look contiguous with mmap
-            maps[j] = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, MMAP_FLAG_PRIVATE_ANON);
+    if (0 == debug) {
 
-            double mapEnd = timer.getElapsedMicros();
+        for(size_t i = 0; i < iterations / 10; i++) {
+            char *maps[10];
+            for (int j = 0; j < 10; j++) {
+                double start = timer.getElapsedMicros();
+                // 3. Make Arraylets look contiguous with mmap
+                maps[j] = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, MMAP_FLAG_PRIVATE_ANON);
 
-            // 4. Modify contiguous memory view and observe change in the heap
-            modifyContiguousMem(pagesize, arrayletSize, maps[j]);
+                double mapEnd = timer.getElapsedMicros();
 
-            double modifyEnd = timer.getElapsedMicros();
+                // 4. Modify contiguous memory view and observe change in the heap
+                modifyContiguousMem(pagesize, arrayletSize, maps[j]);
 
-            totalMapTime += (mapEnd - start);
-            totalModifyTime += (modifyEnd - mapEnd);
+                double modifyEnd = timer.getElapsedMicros();
 
+                totalMapTime += (mapEnd - start);
+                totalModifyTime += (modifyEnd - mapEnd);
+
+            }
+            for (int j = 0; j < 10; j++) {
+                double freeStart = timer.getElapsedMicros();
+
+                // Free addresses
+                int ret = munmap(maps[j], totalArraySize);
+                std::cout << "munmap returned: " << ret << std::endl;
+
+                double freeEnd = timer.getElapsedMicros();
+
+                totalFreeTime += (freeEnd - freeStart);
+            }
+
+            // std::cout << "length of maps: " << (sizeof(maps)/sizeof(*maps)) << " :: " << (*(&maps + 1) - maps) <<  std::endl;
         }
-        for (int j = 0; j < 10; j++) {
-            double freeStart = timer.getElapsedMicros();
-
-            // Free addresses
-            munmap(maps[j], totalArraySize);
-
-            double freeEnd = timer.getElapsedMicros();
-
-            totalFreeTime += (freeEnd - freeStart);
+    } else {
+        contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, MMAP_FLAG_PRIVATE_ANON);
+        fprintf(stdout, "Contiguous before modification!!!!!!!!!\n");
+        for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+            char *arraylet = contiguous+(i*arrayletSize);
+            fprintf(stdout, "\tcontiguous[%1lu] %.64s\n", i, arraylet);
         }
-
-        // std::cout << "length of maps: " << (sizeof(maps)/sizeof(*maps)) << " :: " << (*(&maps + 1) - maps) <<  std::endl;
+        modifyContiguousMem(pagesize, arrayletSize, contiguous);
+        printf("\n");
     }
 
     int64_t elapsedTime = timer.getElapsedMicros();
     
     if (1 == debug) {
+        fprintf(stdout, "First 32 chars of contiguous addresses\n");
+        for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+            char *arraylet = contiguous+(i*arrayletSize);
+            fprintf(stdout, "\tcontiguous[%1lu] %.64s\n", i, arraylet);
+        }
         fprintf(stdout, "First 32 chars of data after mapping and modification of the double mapped addresses\n");
         for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
             char *arraylet = heapMmap+arrayLetOffsets[i];
