@@ -14,6 +14,10 @@
 // To run: open Developer Command Prompt for VS 2017
 // cl /EHsc simulateArrayLetsWindows.cpp
 // simulateArrayLetsWindows 1432 100 0
+// Debug options:
+//		0: Non verbose (uses the iteration argument, 2nd)
+//		1: Verbose with double mapping 
+//		2: Verbose without double mapping 
 
 void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetOffsets[], HANDLE heapHandle, int debug, void* arrayletViews[]) 
    {
@@ -34,7 +38,7 @@ void * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
     }
 
 	for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
-		void *nextAddress = (void *)((char*)((char*)contiguous+i*arrayletSize));
+		void *nextAddress = (void *)((uintptr_t)contiguous + i * arrayletSize);
 		arrayletViews[i] = MapViewOfFileEx(
             heapHandle,     	// file handle
             FILE_MAP_WRITE, 	// read and write access
@@ -143,7 +147,7 @@ int main (int argc, char** argv) {
     long arrayLetOffsets[ARRAYLET_COUNT];
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
         // arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % ONE_GB); // Change pagesize to match HUGETLB size
-		arrayLetOffsets[i] = regionSize*(i*i+10);
+		arrayLetOffsets[i] = regionSize*(i*2);
 		std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << std::endl;
     }
 
@@ -190,15 +194,14 @@ int main (int argc, char** argv) {
     }
 
 	void* arrayletViews[ARRAYLET_COUNT];
+	ElapsedTimer timer;
+	timer.startTimer();
 
-	if(debug != 1) {
+	if(debug == 0) {
 
         double totalMapTime = 0;
         double totalModifyTime = 0;
         double totalFreeTime = 0;
-
-		ElapsedTimer timer;
-		timer.startTimer();
 		
         double freeEnd = timer.getElapsedMicros();
 		// LIMIT: 492 iterations. 
@@ -233,12 +236,18 @@ int main (int argc, char** argv) {
         std::cout << "Total free time " << totalFreeTime << "us (" << (totalFreeTime/1000000) << "s) AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
 
 		
-	} else {
+	} else if (debug == 1) {
+		
+		double startTime = timer.getElapsedMicros();
 		// Make Arraylets look contiguous with VirtualAlloc
 		void* contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, heapHandle, debug, arrayletViews);
 		
 		// Modify contiguous memory view and observe change in the heap
 		modifyContiguousMem(pagesize, arrayletSize, (char*)contiguous);
+		
+		double endTime = timer.getElapsedMicros();
+		
+		double ellapsedTime = endTime - startTime;
 		
 		fprintf(stdout, "\n\t%48s\n\t%48s\n\t%48s\n\n", 
 						"*******************************************************",
@@ -259,6 +268,54 @@ int main (int argc, char** argv) {
 			fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i], heapPtr);
 			fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i]+pagesize, heapPtr2);
 		}
+		
+		std::cout << "Total time to double map and modify array data: " << ellapsedTime << " microseconds.\n";
+	} else {
+		double startTime = timer.getElapsedMicros();
+		
+		/* Simulate index by index copy */
+		char *tempArray = (char *)malloc(totalArraySize * sizeof(char));
+		for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			void *heapArraylet = (void*)((char*)heapPointer+arrayLetOffsets[i]);
+			memcpy(tempArray + (i*arrayletSize), heapArraylet, arrayletSize);
+		}
+		modifyContiguousMem(pagesize, arrayletSize, (char*)tempArray);
+		
+		/* Copy contents back to the heap */
+		for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			void *heapArraylet = (void*)((char*)heapPointer+arrayLetOffsets[i]);
+			memcpy(heapArraylet, tempArray + (i*arrayletSize), arrayletSize);
+		}
+		
+		double endTime = timer.getElapsedMicros();
+		
+		double ellapsedTime = endTime - startTime;
+		
+		fprintf(stdout, "\n\t%48s\n\t%48s\n\t%48s\n\n", 
+						"*******************************************************",
+						"******** THE NEXT 2 OUTPUTS SHOULD MATCH! *************",
+						"*******************************************************");
+						
+		fprintf(stdout, "First 48 chars of data at contiguous block of memory (2 first pages of each arraylet) AFTER modification:\n");				
+		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			char *arrayletDebug = (char*)tempArray+i*arrayletSize;
+			char *arrayletDebug2 = (char*)tempArray+i*arrayletSize+pagesize;
+			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize, arrayletDebug);
+			fprintf(stdout, "\tcontiguous[%1lu] %.48s\n", i*arrayletSize+pagesize, arrayletDebug2);
+		}
+		
+		std::cout << std::endl;
+		fprintf(stdout, "First 48 chars of data AFTER mapping and modification of the double mapped addresses:\n");
+		for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
+			char *heapPtr = (char*)heapPointer+arrayLetOffsets[i];
+			char *heapPtr2 = (char*)heapPointer+arrayLetOffsets[i]+pagesize;
+			fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i], heapPtr);
+			fprintf(stdout, "\theap[%1lu] %.48s\n", arrayLetOffsets[i]+pagesize, heapPtr2);
+		}
+		
+		std::cout << "Total time to double map and modify array data: " << ellapsedTime << " microseconds.\n";
+		
+		free((void *)tempArray);
 	}
 
     if(UnmapViewOfFile(heapPointer) == 0){

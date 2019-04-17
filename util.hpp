@@ -18,8 +18,8 @@
 #include <iostream>
 #include <cstring>
 
-#define ARRAYLET_COUNT 8
-#define ARRAYLET_SIZE_CONST 4 // (pagesize)4096(POSIX) | 65536(Windows) * ARRAYLET_SIZE_CONST: 64 KB
+#define ARRAYLET_COUNT 16
+#define ARRAYLET_SIZE_CONST 1024 // (pagesize)4096(POSIX) | 65536(Windows) * ARRAYLET_SIZE_CONST: 64 KB
 #define SIXTEEN 16
 #define TWO_HUNDRED_56_MB 268435456
 #define ONE_GB 1073741824 // 1GB
