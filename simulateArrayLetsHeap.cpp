@@ -41,7 +41,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
         std::cerr << "Flags parameter not recognized.\n";
         return NULL;
     }
-    char * contiguousMap = (char *)mmap(
+    char * contiguousMap = (char *)mmap64(
                    NULL,
                    totalArraySize, // File size
                    PROT_READ | PROT_WRITE,
@@ -58,7 +58,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
        void *nextAddress = (void *)(contiguousMap+i*arrayletSize);
-       void *address = mmap(
+       void *address = mmap64(
                    (void *)(contiguousMap+i*arrayletSize),
                    arrayletSize, // File size
                    PROT_READ | PROT_WRITE,
@@ -67,7 +67,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
                    arrayLetOffsets[i]);
 
         if (address == MAP_FAILED) {
-            std::cerr << "Failed to mmap address[" << i << "] at mmapContiguous()\n";
+            std::cerr << "Failed to mmap address[" << i << "] at mmapContiguous(). errno: " << errno << "\n";
             munmap(contiguousMap, totalArraySize);
             contiguousMap = NULL;
         } else if (nextAddress != address) {
@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
 
     size_t pagesize = getpagesize(); // 4096 bytes
     std::cout << "System page size: " << pagesize << " bytes.\n";
-    size_t arrayletSize = getArrayletSize(pagesize);
+    size_t arrayletSize = getArrayletSize(pagesize) * 4;
     std::cout << "Arraylet size: " << arrayletSize << " bytes" << std::endl;
 
 	/*
@@ -139,8 +139,8 @@ int main(int argc, char** argv) {
     // filename[fileSize - 1] = '\0';
     std::cout << "Filename generated: " << filename << std::endl;
 
-    std::cout << "pthread_self(): " << pthread_self() << std::endl;
-    std::cout << "(size_t)pthread_self(): " << (uint64_t)pthread_self() << std::endl;
+    // std::cout << "pthread_self(): " << pthread_self() << std::endl;
+    // std::cout << "(size_t)pthread_self(): " << (uint64_t)pthread_self() << std::endl;
 
     // int fh = shm_open(filename, O_RDWR | O_CREAT | O_EXCL, 0600);
     int fh = shm_open(filename, O_RDWR | O_CREAT, 0600);
@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
 
     // Sets the desired size to be allocated
     // Failing to allocate memory will result in a bus error on access.
-    ftruncate(fh, ONE_GB);
+    ftruncate64(fh, ONE_GB);
 
     int mmapProt = 0;
     int mmapFlags = 0;
@@ -161,7 +161,7 @@ int main(int argc, char** argv) {
     mmapProt = PROT_READ | PROT_WRITE;
     mmapFlags = MAP_SHARED;
 
-    char * heapMmap = (char *)mmap(
+    char * heapMmap = (char *)mmap64(
                 NULL,
                 ONE_GB, // File size
                 mmapProt,
@@ -179,9 +179,11 @@ int main(int argc, char** argv) {
     // Get page alligned offsets
     long arrayLetOffsets[ARRAYLET_COUNT];
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        arrayLetOffsets[i] = getPageAlignedOffset(pagesize, rnd.nextNatural() % ONE_GB); // Change pagesize to match HUGETLB size
+        arrayLetOffsets[i] = getPageAlignedOffset(pagesize * 16, rnd.nextNatural() % ONE_GB); // Change pagesize to match HUGETLB size
         std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << std::endl;
     }
+
+    arrayLetOffsets[0] = 0;
 
     char vals[SIXTEEN] = {'3', '5', '6', '8', '9', '0', '1', '2', '3', '7', 'A', 'E', 'C', 'B', 'D', 'F'};
     size_t totalArraySize = 0;
@@ -250,7 +252,7 @@ int main(int argc, char** argv) {
             // std::cout << "length of maps: " << (sizeof(maps)/sizeof(*maps)) << " :: " << (*(&maps + 1) - maps) <<  std::endl;
         }
     } else {
-        contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, MMAP_FLAG_PRIVATE_ANON);
+        contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, MMAP_FLAG_SHARED_ANON);
         fprintf(stdout, "Contiguous before modification!!!!!!!!!\n");
         for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
             char *arraylet = contiguous+(i*arrayletSize);
