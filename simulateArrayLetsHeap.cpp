@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
     }
 
     // Get page alligned offsets
-    long arrayLetOffsets[ARRAYLET_COUNT];
+    long * arrayLetOffsets = (long *)malloc(ARRAYLET_COUNT * sizeof(long));
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
         arrayLetOffsets[i] = getPageAlignedOffset(pagesize * 16, rnd.nextNatural() % ONE_GB); // Change pagesize to match HUGETLB size
         std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << std::endl;
@@ -242,14 +242,11 @@ int main(int argc, char** argv) {
 
                 // Free addresses
                 int ret = munmap(maps[j], totalArraySize);
-                std::cout << "munmap returned: " << ret << std::endl;
 
                 double freeEnd = timer.getElapsedMicros();
 
                 totalFreeTime += (freeEnd - freeStart);
             }
-
-            // std::cout << "length of maps: " << (sizeof(maps)/sizeof(*maps)) << " :: " << (*(&maps + 1) - maps) <<  std::endl;
         }
     } else {
         contiguous = mmapContiguous(totalArraySize, arrayletSize, arrayLetOffsets, fh, MMAP_FLAG_SHARED_ANON);
