@@ -41,7 +41,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
         std::cerr << "Flags parameter not recognized.\n";
         return NULL;
     }
-    char * contiguousMap = (char *)mmap64(
+    char * contiguousMap = (char *)mmap(
                    NULL,
                    totalArraySize, // File size
                    PROT_READ | PROT_WRITE,
@@ -58,7 +58,7 @@ char * mmapContiguous(size_t totalArraySize, size_t arrayletSize, long arrayLetO
 
     for (size_t i = 0; i < ARRAYLET_COUNT; i++) {
        void *nextAddress = (void *)(contiguousMap+i*arrayletSize);
-       void *address = mmap64(
+       void *address = mmap(
                    (void *)(contiguousMap+i*arrayletSize),
                    arrayletSize, // File size
                    PROT_READ | PROT_WRITE,
@@ -153,7 +153,7 @@ int main(int argc, char** argv) {
 
     // Sets the desired size to be allocated
     // Failing to allocate memory will result in a bus error on access.
-    ftruncate64(fh, ONE_GB);
+    ftruncate(fh, FOUR_GB);
 
     int mmapProt = 0;
     int mmapFlags = 0;
@@ -161,9 +161,9 @@ int main(int argc, char** argv) {
     mmapProt = PROT_READ | PROT_WRITE;
     mmapFlags = MAP_SHARED;
 
-    char * heapMmap = (char *)mmap64(
+    char * heapMmap = (char *)mmap(
                 NULL,
-                ONE_GB, // File size
+                FOUR_GB, // File size
                 mmapProt,
                 mmapFlags, 
                 fh, // File handle
@@ -179,12 +179,10 @@ int main(int argc, char** argv) {
     // Get page alligned offsets
     long * arrayLetOffsets = (long *)malloc(ARRAYLET_COUNT * sizeof(long));
     for(size_t i = 0; i < ARRAYLET_COUNT; i++) {
-        arrayLetOffsets[i] = getPageAlignedOffset(pagesize * 16, rnd.nextNatural() % ONE_GB); // Change pagesize to match HUGETLB size
+        arrayLetOffsets[i] = getPageAlignedOffset(pagesize * 16, rnd.nextNatural() % FOUR_GB); // Change pagesize to match HUGETLB size
         std::cout << "Arralylet at " << i << " has offset: " << arrayLetOffsets[i] << std::endl;
     }
-
-    arrayLetOffsets[0] = 0;
-
+    
     char vals[SIXTEEN] = {'3', '5', '6', '8', '9', '0', '1', '2', '3', '7', 'A', 'E', 'C', 'B', 'D', 'F'};
     size_t totalArraySize = 0;
 
@@ -280,7 +278,7 @@ int main(int argc, char** argv) {
     std::cout << "Total modify time " << totalModifyTime << "us (" << (totalModifyTime/1000000) << "s) AVG modify time " << (totalModifyTime / iterations) << "us" << std::endl;
     std::cout << "Total free time " << totalFreeTime << "us (" << (totalFreeTime/1000000) << "s) AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
 
-    munmap(heapMmap, ONE_GB);
+    munmap(heapMmap, FOUR_GB);
 
     return 0;
 }
