@@ -4,3 +4,8 @@ simulateArrayLetsHeap2
 .vscode
 test
 test.cpp
+AssemblyTest.cpp
+testeteste.c
+TestSmart.cpp
+*.o
+**.o
