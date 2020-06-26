@@ -1,6 +1,8 @@
 *.dSYM
 simulateArrayLetsHeap
 simulateArrayLetsHeap2
+offHeapSimulationX
+consumeFileDescriptor
 .vscode
 test
 test.cpp
