@@ -2,6 +2,9 @@
 simulateArrayLetsHeap
 simulateArrayLetsHeap2
 offHeapSimulationX
+offHeapSimulationAIX
+offHeapSimulationAIX2
+offHeapSimulationWin
 consumeFileDescriptor
 .vscode
 test
