@@ -24,30 +24,235 @@
 /**
  */
 
+class OffHeapList {
+
+	struct FreeList {
+		void *lowAddress;
+		void *highAddress;
+		uintptr_t size;
+		FreeList *next;
+	};
+
+public:
+
+	/* Constructor */
+	OffHeapList(void *startAddress, uintptr_t size) 
+		: nodeCount(0),
+		totalFreeSpace(size)
+	{
+		initFreeList(startAddress, size);
+	}
+
+	/* Destructor */
+	~OffHeapList() {
+		printf("Destructor called. Freeing all nodes in FreeList\n");
+		freeAllList();
+	}
+
+	void initFreeList(void *startAddress, uintptr_t size) {
+		head = createNewNode(startAddress, size);
+		head->lowAddress = startAddress;
+		head->highAddress = (void*)((uintptr_t)startAddress + size);
+		head->size = size;
+		head->next = NULL;
+	}
+
+	void *findAvailableAddress(uintptr_t size) {
+		FreeList *previous = NULL;
+		FreeList *current = head;
+		void *returnAddr = NULL;
+
+		while(NULL != current) {
+			uintptr_t currSize = current->size;
+			if(currSize >= size) {
+				returnAddr = current->lowAddress;
+				if(currSize == size) {
+					/* Remove from FreeList since resulting size is 0 */
+					if (NULL == previous) {
+						head = current->next;
+					} else {
+						previous->next = current->next;
+					}
+					delete current;
+					nodeCount--;
+				} else {
+					/* Update current entry */
+					current->lowAddress = (void*)((uintptr_t)returnAddr + size);
+					current->size -= size;
+				}
+				break;
+			}
+		
+			previous = current;
+			current = current->next;
+		}
+
+		if (NULL != returnAddr) {
+			totalFreeSpace -= size;
+		}
+
+		return returnAddr;
+	}
+
+	bool addEntryToFreeList(void *startAddress, uintptr_t size) {
+
+		FreeList *previous = NULL;
+		FreeList *current = head;
+		void *endAddress = (void*)((uintptr_t)startAddress + size);
+		bool placed = false;
+
+		while (NULL != current) {
+			void *lowAddress = current->lowAddress;
+			void *highAddress = current->highAddress;
+
+			if (startAddress > highAddress) {
+				previous = current;
+				current = current->next;
+				continue;
+			}
+
+			if(endAddress == lowAddress) {
+				/* Newly released memory is right before current node */
+				current->lowAddress = startAddress;
+				current->size += size;
+			} else if (startAddress == highAddress) {
+				/* Newly released memory is right after current node */
+				current->highAddress = endAddress;
+				current->size += size;
+				/* Check if we should merge next node */
+				FreeList *nextNode = current->next;
+				if (NULL != nextNode) {
+					if(nextNode->lowAddress == endAddress) {
+						current->highAddress = nextNode->highAddress;
+						current->size += nextNode->size;
+						current->next = nextNode->next;
+						delete nextNode;
+						nodeCount--;
+					}
+				}
+			} else if (endAddress < lowAddress) {
+				//printf("Inserting startAddress: %p, size: %zu, before low address: %p\n", startAddress, size, lowAddress);
+				/* Create new node and insert in between */
+				FreeList *node = createNewNode(startAddress, size);
+				if (NULL != previous) {
+					previous->next = node;
+				} else {
+					head = node;
+				}
+				node->next = current;
+			} else {
+				printf("Unreachable!!!!!\n");
+				return false;
+			}
+
+			placed = true;
+			break;
+		}
+		
+		/* We must insert node right at the end of the list */
+		if (!placed) {
+			FreeList *node = createNewNode(startAddress, size);
+			previous->next = node;
+		}
+
+		totalFreeSpace += size;
+		return true;
+	}
+
+	bool isEmpty() {
+		return NULL == head || NULL == head->lowAddress;
+	}
+
+	void printFreeListStatus() {
+		FreeList *current = head;
+		printf("---------------------------------------------------------------\n");
+		printf("Number of free list nodes: %zu\n", nodeCount);
+		printf("Is Free list empty: %d\n", (int)isEmpty());
+		printf("Total free space: %zu\n", totalFreeSpace);
+		printf("##############################\n");
+		if (!isEmpty()) {
+			while (NULL != current) {
+				printNode(current);
+				printf("##############################\n");
+				current = current->next;
+			}
+		}
+		printf("---------------------------------------------------------------\n");
+	}
+
+private:
+
+	void printNode(FreeList *node) {
+		printf("Low address: %p\n", node->lowAddress);
+		printf("High address: %p\n", node->highAddress);
+		printf("Free size: %zu\n", node->size);
+	}
+
+	FreeList *createNewNode(void *startAddress, uintptr_t size) {
+		FreeList *node = new FreeList;
+		node->lowAddress = startAddress;
+		node->highAddress = (void*)((uintptr_t)startAddress + size);
+		node->size = size;
+		node->next = NULL;
+		nodeCount++;
+		return node;
+	}
+
+	void freeAllList() {
+		FreeList *current = head;
+		if (!isEmpty()) {
+			 while (NULL != current) {
+				FreeList *temp = current;
+				current = current->next;
+				delete temp;
+			 }
+		}
+	}
+
+	FreeList *head;
+	uintptr_t nodeCount;
+	uintptr_t totalFreeSpace;
+
+};
+
+void testOffHeapList() {
+
+	OffHeapList offHeapList((void *)0x01000, 1024*1024);
+	offHeapList.printFreeListStatus();
+	void *addr0 = offHeapList.findAvailableAddress(64);
+	void *addr1 = offHeapList.findAvailableAddress(32);
+	void *addr2 = offHeapList.findAvailableAddress(256);
+	void *addr3 = offHeapList.findAvailableAddress(512);
+	void *addr4 = offHeapList.findAvailableAddress(128);
+	void *addr5 = offHeapList.findAvailableAddress(64);
+	void *addr6 = offHeapList.findAvailableAddress(128);
+	offHeapList.printFreeListStatus();
+	bool ret1 = offHeapList.addEntryToFreeList(addr1, 32);
+	bool ret2 = offHeapList.addEntryToFreeList(addr3, 512);
+	bool ret3 = offHeapList.addEntryToFreeList(addr5, 64);
+	offHeapList.printFreeListStatus();
+	bool ret4 = offHeapList.addEntryToFreeList(addr2, 256);
+	offHeapList.printFreeListStatus();
+	addr1 = offHeapList.findAvailableAddress(200);
+	addr6 =	offHeapList.findAvailableAddress(7392);
+	offHeapList.printFreeListStatus();
+}
+
 int main(int argc, char** argv) {
 
-	/*if (argc != 4) {
-		std::cout<<"USAGE: " << argv[0] << " seed# iterations# debug<0,1>" << std::endl;
-		std::cout << "Example: " << argv[0] << " 6363 50000 0" << std::endl;
-		return 1;
-	}
-    
-	PaddedRandom rnd;
-	int seed = atoi(argv[1]);
-	int iterations = atoi(argv[2]);
-	int debug = atoi(argv[3]);
-	rnd.setSeed(seed);
-	*/
+	//testOffHeapList();
+	//return 1;
 
 	size_t pagesize = getpagesize(); // 4096 bytes
 	std::cout << "System page size: " << pagesize << " bytes.\n";
 	size_t arrayletSize = getArrayletSize(pagesize) * 4;
 	std::cout << "Arraylet size: " << arrayletSize << " bytes" << std::endl;
 	uintptr_t regionCount = 1024;
-	uintptr_t offHeapRegionSize = FOUR_GB;
-	uintptr_t offHeapSize = offHeapRegionSize * regionCount;
+	//uintptr_t offHeapRegionSize = FOUR_GB;
 	uintptr_t inHeapSize = FOUR_GB;
+	uintptr_t offHeapSize = inHeapSize * 4;
 	uintptr_t inHeapRegionSize = inHeapSize / regionCount;
+	uintptr_t offHeapRegionSize = inHeapRegionSize;
 	ElapsedTimer timer;
 	timer.startTimer();
 
@@ -85,6 +290,8 @@ int main(int argc, char** argv) {
 	}
 	printf("In-heap address: %p, Off-heap address: %p\n", inHeapMmap, offHeapMmap);
 
+	OffHeapList offHeapList(offHeapMmap, offHeapSize);
+
 	mmapProt = PROT_READ | PROT_WRITE;
 
 	/* Setup in-heap with commited regions: */
@@ -118,6 +325,8 @@ int main(int argc, char** argv) {
 
 	/* Make sure we can read and write from this memory that we'll touch */
 	int64_t elapsedTime3, elapsedTime4, elapsedTime5, elapsedTime6, elapsedTime7, elapsedTime8;
+
+	// TODO: Insert big loop here to simulate decommiting and commiting of in-heap, off-heap memory respectively. Make it random?
 
 	/* Give hint to OS that we'll be using this memory range in the near future */
 	void *offHeapChosenAddress = (void*)((uintptr_t)offHeapMmap + offsets[11] * offHeapRegionSize);
