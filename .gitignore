@@ -1,6 +1,9 @@
 *.dSYM
 simulateArrayLetsHeap
 simulateArrayLetsHeap2
+offHeapSimulationMac
+offHeapSimulationMac2
+offHeapSimulationMacDoubleMap
 offHeapSimulationX
 offHeapSimulationAIX
 offHeapSimulationAIX2

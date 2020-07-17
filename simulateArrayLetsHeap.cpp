@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
     int mmapFlags = 0;
 
     mmapProt = PROT_READ | PROT_WRITE;
-    mmapFlags = MAP_SHARED | MAP_HUGETLB;
+    mmapFlags = MAP_SHARED; // | MAP_HUGETLB;
 
     char * heapMmap = (char *)mmap(
                 NULL,
@@ -172,24 +172,6 @@ int main(int argc, char** argv) {
                 mmapFlags, 
                 fh, // File handle
                 0);
-
-    int fh2 = shm_open("filename", O_RDWR | O_CREAT, 0600);
-    shm_unlink("filename");
-    ftruncate(fh2, ONE_GB);
-    void *addr2 = mmap(
-                NULL,
-                ONE_GB, // File size
-                PROT_NONE,
-                MAP_SHARED | MAP_HUGETLB, 
-                fh2, // File handle
-                0);
-
-    if (addr2 == MAP_FAILED) {
-       std::cerr << "Failed to mmap addr2 " << strerror(errno) << "\n";
-       return 1;
-    } else {
-       std::cout << "Successfully mmaped ADDR2 at address: " << addr2 << "\n";
-    }
 
     if (heapMmap == MAP_FAILED) {
        std::cerr << "Failed to mmap " << strerror(errno) << "\n";
@@ -301,10 +283,8 @@ int main(int argc, char** argv) {
     std::cout << "Total free time " << totalFreeTime << "us (" << (totalFreeTime/1000000) << "s) AVG free time " << (totalFreeTime / iterations) << "us" << std::endl;
 
     munmap(heapMmap, FOUR_GB);
-    munmap(addr2, ONE_GB);
 
     close(fh);
-    close(fh2);
 
     return 0;
 }
