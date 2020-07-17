@@ -95,31 +95,22 @@ public:
 			uintptr_t objSize = tempNode->size;
 			delete tempNode;
 			offHeapList->addEntryToFreeList(startAddress, objSize);
-			intptr_t ret = (intptr_t)madvise(startAddress, objSize, MADV_DONTNEED); // MADV_DONTNEED
-			if (0 != ret) {
-				printf("madvise returned -1 trying to free off-heap region and errno: %d, error message: %s\n", errno, strerror(errno));
+			/* Free off-heap memory range. Will this work? */
+			munmap(startAddress, objSize);
+			void *address = mmap(
+						startAddress,
+						objSize,
+						PROT_READ | PROT_WRITE,
+						MAP_PRIVATE | MAP_FIXED | MAP_ANON,
+						-1,
+						0);
+			if (address == MAP_FAILED) {
+				printf("***************************************************************************************** errno: %d\n", errno);
+				return UINTMAX_MAX;
+			} else if (address != startAddress) {
+				printf("!!!!!!!!!!!!!!!!!!!! errno: %d\n", errno);
 				return UINTMAX_MAX;
 			}
-			ret = (intptr_t)msync(startAddress, objSize, MS_INVALIDATE | MS_SYNC);
-			if (0 != ret) {
-				printf("ret: %ld, and errno: %d, error message: %s\n", ret, errno, strerror(errno));
-				return UINTMAX_MAX;
-			}
-			// munmap(startAddress, objSize);
-			// void *address = mmap(
-			// 			startAddress,
-			// 			objSize,
-			// 			PROT_READ | PROT_WRITE,
-			// 			MAP_SHARED | MAP_FIXED,
-			// 			fd,
-			// 			0);
-			// if (address == MAP_FAILED) {
-			// 	printf("***************************************************************************************** errno: %d\n", errno);
-			// 	return UINTMAX_MAX;
-			// } else if (address != startAddress) {
-			// 	printf("!!!!!!!!!!!!!!!!!!!! errno: %d\n", errno);
-			// 	return UINTMAX_MAX;
-			// }
 			nodeCount--;
 			nodesDeleted++;
 			objTotalSize -= objSize;
@@ -511,19 +502,19 @@ int main(int argc, char** argv) {
 	int mmapProt = 0;
 	int mmapFlags = 0;
 
-	void *dummyMem = mmap(
-                NULL,
-                (uintptr_t)FOUR_GB, // File size
-                PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANON,
-                -1, // File handle
-                0);
-	if (dummyMem == MAP_FAILED) {
-		std::cerr << "Failed to mmap in-heap " << strerror(errno) << "\n";
-		return 1;
-	}
-	memset(dummyMem, 'Z', (uintptr_t)FOUR_GB);
-	printf("CONSUMED %zu of memory at: %p!!!!!!!!\n", (uintptr_t)FOUR_GB, dummyMem);
+	// void *dummyMem = mmap(
+    //             NULL,
+    //             (uintptr_t)FOUR_GB, // File size
+    //             PROT_READ | PROT_WRITE,
+    //             MAP_PRIVATE | MAP_ANON,
+    //             -1, // File handle
+    //             0);
+	// if (dummyMem == MAP_FAILED) {
+	// 	std::cerr << "Failed to mmap in-heap " << strerror(errno) << "\n";
+	// 	return 1;
+	// }
+	// memset(dummyMem, 'Z', (uintptr_t)FOUR_GB);
+	// printf("CONSUMED %zu of memory at: %p!!!!!!!!\n", (uintptr_t)FOUR_GB, dummyMem);
 
 	mmapProt = PROT_NONE; //PROT_READ | PROT_WRITE;
 	mmapFlags = MAP_PRIVATE | MAP_ANON;
@@ -533,19 +524,6 @@ int main(int argc, char** argv) {
 	/* Calculate initial free physycal memory */
 	uint64_t initialfreePhysicalMemory = getAvailablePhysicalMemory();
 	if (0 == initialfreePhysicalMemory) {
-		return 1;
-	}
-
-	void *inHeapMmap = mmap(
-                NULL,
-                inHeapSize, // File size
-                PROT_READ | PROT_WRITE,
-                mmapFlags,
-                -1, // File handle
-                0);
-
-	if (inHeapMmap == MAP_FAILED) {
-		std::cerr << "Failed to mmap in-heap " << strerror(errno) << "\n";
 		return 1;
 	}
 
@@ -565,19 +543,32 @@ int main(int argc, char** argv) {
 
     // Sets the desired size to be allocated
     // Failing to allocate memory will result in a bus error on access.
-    int retft = ftruncate(fd, offHeapSize);
+    int retft = ftruncate(fd, inHeapSize);
 	if (retft == -1) {
       printf("Error while ftruncate file descriptor %d\n", fd);
 	  close(fd);
       return 1;
     }
+
+	void *inHeapMmap = mmap(
+                NULL,
+                inHeapSize, // File size
+                PROT_READ | PROT_WRITE,
+                MAP_SHARED,
+                fd, // File handle
+                0);
+
+	if (inHeapMmap == MAP_FAILED) {
+		std::cerr << "Failed to mmap in-heap " << strerror(errno) << "\n";
+		return 1;
+	}
 	
 	void *offHeapMmap = mmap(
                 NULL,
                 offHeapSize, // File size
                 mmapProt,
-                MAP_SHARED, 
-                fd, // File handle
+                mmapFlags, 
+                -1, // File handle
                 0);
 
 	int64_t elapsedTime2 = timer.getElapsedMicros();
@@ -654,7 +645,7 @@ int main(int argc, char** argv) {
 		uintptr_t numDoubleMappedRegions = (inHeapSize - totalOffHeapCommited) / commitSize;
 		void **doubleMappedList[numDoubleMappedRegions];
 		uintptr_t doubleMapCount = 0;
-		while (totalOffHeapCommited + commitSize < inHeapSize) {
+		while (totalOffHeapCommited + commitSize <= inHeapSize) {
 			uintptr_t remmainingBytes = commitSize;
 			int j = 0;
 			int a = 0;
@@ -683,13 +674,13 @@ int main(int argc, char** argv) {
 			mprotect(addr, commitSize, mmapProt);
 
 			for (j = 0; j < numOfRegionsAlloc; j++) {
-				uintptr_t addressOffset = (uintptr_t)(((uintptr_t)addr - (uintptr_t)offHeapMmap) + j * inHeapRegionSize);
-				void *currentContiguousAddress = (void*)((uintptr_t)offHeapMmap + addressOffset);
+				uintptr_t addressOffset = (uintptr_t)((uintptr_t)doubleMappedAddresses[j] - (uintptr_t)inHeapMmap);
+				void *currentContiguousAddress = (void*)((uintptr_t)addr + (j * inHeapRegionSize));
 				if (debug) {
-					printf("Dobule mapping. j: %d, inHeapAddress: %p, currentContiguousAddress: %p\n", j, doubleMappedAddresses[j], currentContiguousAddress);
+					printf("Dobule mapping. j: %d, inHeapAddress: %p, currentContiguousAddress: %p, addressOffset: %zu\n", j, doubleMappedAddresses[j], currentContiguousAddress, addressOffset);
 				}
 				void *address = mmap(
-						doubleMappedAddresses[j],
+						currentContiguousAddress,
 						inHeapRegionSize,
 						PROT_READ | PROT_WRITE,
 						MAP_SHARED | MAP_FIXED,
@@ -700,8 +691,8 @@ int main(int argc, char** argv) {
 					printf("***************************** errno: %d\n", errno);
 					printf("Failed to mmap address[%d] at mmapContiguous()\n", j);
 					return 1;
-				} else if (doubleMappedAddresses[j] != address) {
-					printf("Map failed to provide the correct address. nextAddress %p != %p\n", doubleMappedAddresses[j], address);
+				} else if (currentContiguousAddress != address) {
+					printf("Map failed to provide the correct address. nextAddress %p != %p\n", currentContiguousAddress, address);
 					return 1;
 				}
 			}
@@ -748,17 +739,7 @@ int main(int argc, char** argv) {
 			void **doubleMapAdresses = doubleMappedList[j];
 			for (int jj = 0; jj < numOfRegionsAlloc; jj++) {
 				void *chosenAddress = doubleMapAdresses[jj];
-				void *address = mmap(chosenAddress, 
-						inHeapRegionSize, 
-						PROT_READ | PROT_WRITE,
-						MAP_PRIVATE | MAP_FIXED | MAP_ANON, 
-						-1, 
-						0);
-				if (address == MAP_FAILED || address != chosenAddress) {
-					printf("Failed!!!! errno: %d\n", errno);
-					return 1;
-				}
-				memset(chosenAddress, vals[jj%SIXTEEN], inHeapRegionSize);
+				// memset(chosenAddress, vals[jj%SIXTEEN], inHeapRegionSize);
 				uintptr_t regionIndex = ((uintptr_t)chosenAddress - (uintptr_t)inHeapMmap) / inHeapRegionSize;
 				if (!inOffHeapUsed[regionIndex]) {
 					printf("In heap index: %zu, should have been marked true previously for address: %p\n", regionIndex, chosenAddress);
@@ -782,11 +763,11 @@ int main(int argc, char** argv) {
 		// sleep(2);
 	}
 
-	for(uintptr_t i = 0; i < FOUR_GB; i += 1024*1024*32) {
-		char *charAddr = (char*)((uintptr_t)dummyMem + i);
-		printf("i: %zu, charAddr: %c, charAddr+128: %c, charAddr+1024: %c\n", i, *charAddr, *(charAddr+128), *(charAddr+1024));
-	}
-	munmap(dummyMem, (uintptr_t)FOUR_GB);
+	// for(uintptr_t i = 0; i < FOUR_GB; i += 1024*1024*32) {
+	// 	char *charAddr = (char*)((uintptr_t)dummyMem + i);
+	// 	printf("i: %zu, charAddr: %c, charAddr+128: %c, charAddr+1024: %c\n", i, *charAddr, *(charAddr+128), *(charAddr+1024));
+	// }
+	// munmap(dummyMem, (uintptr_t)FOUR_GB);
 	// ###############################################
 
 	printf("########################################### SUMMARY #####################################################\n");
