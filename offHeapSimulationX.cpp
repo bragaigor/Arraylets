@@ -23,137 +23,111 @@
 /**
  */
 
-class OffHeapObjectList {
-
-	struct ObjectAddrNode {
-		void *address;
-		uintptr_t size;
-		ObjectAddrNode *next;
-	};
-
-public:
-
-	OffHeapObjectList() : 
-		nodeCount(0),
-       		objTotalSize(0) {
-	
-	}
-
-	~OffHeapObjectList() {
-		freeAllList();
-	}
-
-	bool addObjToList(void *address, uintptr_t size) {
-		ObjectAddrNode *previous = NULL;
-		ObjectAddrNode *current = head;
-		ObjectAddrNode *newNode = createNewNode(address, size);
-		if (NULL == current) {
-			head = newNode;
-		} else {
-			while (NULL != current && (current->address < address)) {
-				previous = current;
-				current = current->next;
-			}
-
-			newNode->next = current;
-			if (NULL == previous) {
-				head = newNode;
-			} else {
-				previous->next = newNode;
-			}
-		}
-		objTotalSize += size;
-		return true;
-	}
-
-	/**
-	 * Removed half of used off-heap nodes and frees the memory associated to them with madvise
-	 * @param OffHeapList *offHeapList	off-heap free list
-	 *
-	 * @return total bytes amount of freed memry
-	 */
-	uintptr_t removeHalfOfNodes(OffHeapList *offHeapList) {
-		if (NULL == head || (nodeCount < 3)) {
-			printf("List is empty or has less than 3 nodes. Nothing to do.\n");
-			return 0;
-		}
-
-		ObjectAddrNode *current = head;
-		uintptr_t nodesDeleted = 0;
-		uintptr_t totalSizeFreed = 0;
-
-		/* Delete every other node */
-		while ((NULL != current) && (NULL != current->next)) {
-			ObjectAddrNode *tempNode = current->next;
-			current->next = current->next->next;
-			void *startAddress = tempNode->address;
-			uintptr_t objSize = tempNode->size;
-			delete tempNode;
-			offHeapList->addEntryToFreeList(startAddress, objSize);
-			intptr_t ret = (intptr_t)madvise(startAddress, objSize, MADV_DONTNEED);
-			if (0 != ret) {
-				printf("madvise returned -1 trying to free off-heap region and errno: %d, error message: %s\n", errno, strerror(errno));
-				return UINTMAX_MAX;
-			}
-			nodeCount--;
-			nodesDeleted++;
-			objTotalSize -= objSize;
-			totalSizeFreed += objSize;
+bool OffHeapObjectList::addObjToList(void *address, uintptr_t size) {
+	ObjectAddrNode *previous = NULL;
+	ObjectAddrNode *current = head;
+	ObjectAddrNode *newNode = createNewNode(address, size);
+	if (NULL == current) {
+		head = newNode;
+	} else {
+		while (NULL != current && (current->address < address)) {
+			previous = current;
 			current = current->next;
 		}
 
-		printf("Number of objects deleted: %zu, Total size freed: %zu\n", nodesDeleted, totalSizeFreed);
-		return totalSizeFreed;
-	}
-
-	void printOffHeapObjectStatus() {
-		printf("---------------------------------------------------------------\n");
-		printf("Total number of objects: %zu\n", nodeCount);
-		printf("Objects total size: %zu\n", objTotalSize);
-		if (!isEmpty()) {
-			printf("###################################\n");
-			ObjectAddrNode *current = head;
-			while (NULL != current) {
-				printfObject(current);
-				current = current->next;
-			}
+		newNode->next = current;
+		if (NULL == previous) {
+			head = newNode;
+		} else {
+			previous->next = newNode;
 		}
-		printf("---------------------------------------------------------------\n");
+	}
+	objTotalSize += size;
+	return true;
+}
+
+/**
+ * Removed half of used off-heap nodes and frees the memory associated to them with madvise
+ * @param OffHeapList *offHeapList	off-heap free list
+ *
+ * @return total bytes amount of freed memry
+ */
+uintptr_t OffHeapObjectList::removeHalfOfNodes(OffHeapList *offHeapList) {
+	if (NULL == head || (nodeCount < 3)) {
+		printf("List is empty or has less than 3 nodes. Nothing to do.\n");
+		return 0;
 	}
 
-	bool isEmpty() {
- 		return NULL == head;
+	ObjectAddrNode *current = head;
+	uintptr_t nodesDeleted = 0;
+	uintptr_t totalSizeFreed = 0;
+
+	/* Delete every other node */
+	while ((NULL != current) && (NULL != current->next)) {
+		ObjectAddrNode *tempNode = current->next;
+		current->next = current->next->next;
+		void *startAddress = tempNode->address;
+		uintptr_t objSize = tempNode->size;
+		delete tempNode;
+		offHeapList->addEntryToFreeList(startAddress, objSize);
+		intptr_t ret = (intptr_t)madvise(startAddress, objSize, MADV_DONTNEED);
+		if (0 != ret) {
+			printf("madvise returned -1 trying to free off-heap region and errno: %d, error message: %s\n", errno, strerror(errno));
+			return UINTMAX_MAX;
+		}
+		nodeCount--;
+		nodesDeleted++;
+		objTotalSize -= objSize;
+		totalSizeFreed += objSize;
+		current = current->next;
 	}
 
-private:
-	ObjectAddrNode *createNewNode(void *address, uintptr_t size) {
-		ObjectAddrNode *node = new ObjectAddrNode;
-		node->address = address;
-		node->size = size;
-		nodeCount++;
-		return node;
-	}
+	printf("Number of objects deleted: %zu, Total size freed: %zu\n", nodesDeleted, totalSizeFreed);
+	return totalSizeFreed;
+}
 
-	void printfObject(ObjectAddrNode *node) {
-		printf("Object address at offheap: %p\n", node->address);
-		printf("Object size: %zu\n", node->size);
-	}
-
-	void freeAllList() {
+void OffHeapObjectList::printOffHeapObjectStatus() {
+	printf("---------------------------------------------------------------\n");
+	printf("Total number of objects: %zu\n", nodeCount);
+	printf("Objects total size: %zu\n", objTotalSize);
+	if (!isEmpty()) {
+		printf("###################################\n");
 		ObjectAddrNode *current = head;
-		if (!isEmpty()) {
-			while (NULL != current) {
-				ObjectAddrNode *temp = current;
-				current = current->next;
-				delete temp;
-			}
+		while (NULL != current) {
+			printfObject(current);
+			current = current->next;
 		}
 	}
+	printf("---------------------------------------------------------------\n");
+}
 
-	uintptr_t nodeCount;
-	uintptr_t objTotalSize;
-	ObjectAddrNode *head;
-};
+bool OffHeapObjectList::isEmpty() {
+	return NULL == head;
+}
+
+OffHeapObjectList::ObjectAddrNode *OffHeapObjectList::createNewNode(void *address, uintptr_t size) {
+	ObjectAddrNode *node = new ObjectAddrNode;
+	node->address = address;
+	node->size = size;
+	nodeCount++;
+	return node;
+}
+
+void OffHeapObjectList::printfObject(ObjectAddrNode *node) {
+	printf("Object address at offheap: %p\n", node->address);
+	printf("Object size: %zu\n", node->size);
+}
+
+void OffHeapObjectList::freeAllList() {
+	ObjectAddrNode *current = head;
+	if (!isEmpty()) {
+		while (NULL != current) {
+			ObjectAddrNode *temp = current;
+			current = current->next;
+			delete temp;
+		}
+	}
+}
 
 void OffHeapList::initFreeList(void *startAddress, uintptr_t size) {
 	head = createNewNode(startAddress, size);
@@ -363,14 +337,15 @@ int main(int argc, char** argv) {
 	//testOffHeapList();
 	//return 1;
 	
-	if (argc != 3) {
-		std::cout<<"USAGE: " << argv[0] << " seed# iterations#" << std::endl;
-		std::cout << "Example: " << argv[0] << " 6363 50000" << std::endl;
+	if (argc != 4) {
+		printf("USAGE: %s seed# iterations# debug<0,1>\n", argv[0]);
+		printf("Example: %s 6363 50000 1\n", argv[0]);
 		return 1;
 	}
 	PaddedRandom rnd;
 	int seed = atoi(argv[1]);
 	int iterations = atoi(argv[2]);
+	bool debug = atoi(argv[3]) == 1;
 	rnd.setSeed(seed); // rnd.nextNatural() % FOUR_GB
 
 	uintptr_t iterArrayletSize[iterations];
@@ -378,13 +353,10 @@ int main(int argc, char** argv) {
 	void *biggestFreeSizeAddrs[iterations];
 
 	size_t pagesize = getpagesize(); // 4096 bytes
-	std::cout << "System page size: " << pagesize << " bytes.\n";
-	size_t arrayletSize = getArrayletSize(pagesize) * 4;
-	std::cout << "Arraylet size: " << arrayletSize << " bytes" << std::endl;
+	printf("System page size: %zu\n", pagesize);
 	uintptr_t regionCount = 1024;
-	//uintptr_t offHeapRegionSize = FOUR_GB;
 	uintptr_t inHeapSize = FOUR_GB + TWO_GB;
-	uintptr_t offHeapSize = inHeapSize * 3;
+	uintptr_t offHeapSize = inHeapSize * 2.5;
 	uintptr_t inHeapRegionSize = inHeapSize / regionCount;
 	uintptr_t offHeapRegionSize = inHeapRegionSize;
 	ElapsedTimer timer;
@@ -398,6 +370,7 @@ int main(int argc, char** argv) {
 
 	int64_t elapsedTime1 = timer.getElapsedMicros();
 
+	/* Reserve in-heap memory */
 	void *inHeapMmap = mmap(
                 NULL,
                 inHeapSize, // File size
@@ -406,6 +379,7 @@ int main(int argc, char** argv) {
                 -1, // File handle
                 0);
 	
+	/* Reserve off-heap memory */
 	void *offHeapMmap = mmap(
                 NULL,
                 offHeapSize, // File size
@@ -424,9 +398,8 @@ int main(int argc, char** argv) {
 	if (offHeapMmap == MAP_FAILED) {
 		std::cerr << "Failed to mmap off-heap " << strerror(errno) << "\n";
 		return 1;
-	} else {
-		std::cout << "Successfully mmaped off-heap at address: " << (void *)offHeapMmap << "\n";
 	}
+
 	printf("In-heap address: %p, Off-heap address: %p\n", inHeapMmap, offHeapMmap);
 
 	/*
@@ -460,12 +433,11 @@ int main(int argc, char** argv) {
 	}
 
 	std::cout << "************************************************\n";
-        char *someString = (char*)inHeapMmap;
-        printf("Chars at: 0: %c, 100: %c, 500: %c, 1024: %c, 1048576: %c\n", *(someString + regionIndexes[0]*inHeapRegionSize), *(someString + regionIndexes[1]*inHeapRegionSize + 1024), *(someString + regionIndexes[2]*inHeapRegionSize + 10000), *(someString + regionIndexes[3]*inHeapRegionSize + 20000), *(someString + regionIndexes[6]*inHeapRegionSize + 50000));
+	if (debug) {
+        	char *someString = (char*)inHeapMmap;
+        	printf("Chars at: 0: %c, 100: %c, 500: %c, 1024: %c, 1048576: %c\n", *(someString + regionIndexes[0]*inHeapRegionSize), *(someString + regionIndexes[1]*inHeapRegionSize + 1024), *(someString + regionIndexes[2]*inHeapRegionSize + 10000), *(someString + regionIndexes[3]*inHeapRegionSize + 20000), *(someString + regionIndexes[6]*inHeapRegionSize + 50000));
+	}
 	printf("######## Calculated commited memory: %zu bytes ##########\n", totalCalculatedComitedMem);
-
-	printf("Sleeping for 15 seconds before we start doing anything. off-heap created successfully. Fetch RSS\n");
-	//sleep(15);
 
 	uintptr_t offsets[SIXTEEN] = {0, 12, 32, 45, 100, 103, 157, 198, 234, 281, 309, 375, 416, 671, 685, 949};
 	size_t totalArraySize = 0;
@@ -479,14 +451,15 @@ int main(int argc, char** argv) {
 	void *usedOffHeapAddr[regionCount/2];
 	bool sizeSwitch = false;
 
-	// Insert big loop here to simulate decommiting and commiting of in-heap, off-heap memory respectively. Make it random?
+	// Simates decommiting and commiting of in-heap, off-heap memory respectively
 	for(int i = 0; i < iterations; i++) {
 		if(i % 7 == 0) {
 			sizeSwitch = !sizeSwitch;
 		}
+		/* For 7 iterations pick regions sized between 2 and 9, the next 7 iterations pick regions sized between 10 and 32 */
 		uintptr_t numOfRegionsAlloc = sizeSwitch ? ((rnd.nextNatural() % 8) + 2) : ((rnd.nextNatural() % 23) + 10); // Numbers between 2 and 32 included
 		uintptr_t commitSize = numOfRegionsAlloc * inHeapRegionSize;
-		printf("Chosen region count: %zu, commitSize: %zu, totalOffHeapCommited: %zu\n", numOfRegionsAlloc, commitSize, totalOffHeapCommited);
+		printf("Iter: %d, Chosen region count: %zu, commitSize: %zu, totalOffHeapCommited so far: %zu\n", i, numOfRegionsAlloc, commitSize, totalOffHeapCommited);
 		/* Decommit in-heap & commit off-heap regions until we deplit in-heap memory size */
 		/* E.g. If inHeapSize = 1024MB, totalOffHeapCommited = 968MB, commitSize = 82MB it will surpass maximum allowed */
 		while (totalOffHeapCommited + commitSize < inHeapSize) {
@@ -507,7 +480,6 @@ int main(int argc, char** argv) {
 				}
 				j++;
 			}
-			//offHeapList.printFreeListStatus();
 			/* Record returned address to keep track of object order */
 			void *addr = offHeapList.findAvailableAddress(commitSize);
 			if (NULL == addr) {
@@ -519,11 +491,14 @@ int main(int argc, char** argv) {
 			mprotect(addr, commitSize, mmapProt);
 			memset(addr, vals[i % SIXTEEN], commitSize);
 			totalOffHeapCommited += commitSize;
+			/* Add space as an object to object list */
 			objList.addObjToList(addr, commitSize);
 		}
 
 		/* Free half of off-heap. For every other address */
-		objList.printOffHeapObjectStatus();
+		if (debug) {
+			objList.printOffHeapObjectStatus();
+		}
 		uintptr_t offHeapBytesFreed = objList.removeHalfOfNodes(&offHeapList);
 		if (UINTMAX_MAX == offHeapBytesFreed) {
 			printf("Something went wrong while freeing half of off-heap objects\n");
@@ -544,20 +519,19 @@ int main(int argc, char** argv) {
 			memset(chosenAddress, vals[oind%SIXTEEN], inHeapRegionSize);
 		}
 		totalOffHeapCommited -= offHeapBytesFreed;
-		objList.printOffHeapObjectStatus();
-		offHeapList.printFreeListStatus();
+		if (debug) {
+			objList.printOffHeapObjectStatus();
+			offHeapList.printFreeListStatus();
+		}
 
-		printf("Sleeping for 2 seconds after iter: %d\n", i);
 		biggestFreeSize[i] = offHeapList.getApproximateBiggestFreeSize();
 		iterArrayletSize[i] = numOfRegionsAlloc;
 		biggestFreeSizeAddrs[i] = offHeapList.getBiggestFreeSizeAddr();
-		sleep(2);
+		//printf("Sleeping for 2 seconds after iter: %d\n", i);
+		//sleep(2);
 	}
 
 	// ###############################################
-
-	//printf("Time taken to mprotect off_heap region %zu: %.2f us, in seconds: %.2f\n", totalCalculatedComitedMem, mprotectTime2, (mprotectTime2/1000000));
-	//printf("Time taken to memset %zu at off-heap with 2's: %.2f us, in seconds: %.2f\n", totalCalculatedComitedMem, memsetTime2, (memsetTime2/1000000));
 
 	printf("########################################### SUMMARY #####################################################\n");
 	printf("Total iterations: %d\n", iterations);

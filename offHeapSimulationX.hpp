@@ -2,6 +2,44 @@
 #include <iostream>
 #include <fstream>
 
+class OffHeapList;
+
+class OffHeapObjectList {
+
+	struct ObjectAddrNode {
+		void *address;
+		uintptr_t size;
+		ObjectAddrNode *next;
+	};
+
+public:
+
+	OffHeapObjectList() :
+		nodeCount(0),
+		objTotalSize(0) {
+
+	}
+
+	~OffHeapObjectList() {
+		freeAllList();
+	}
+
+	bool isEmpty();
+	void printOffHeapObjectStatus();
+	uintptr_t removeHalfOfNodes(OffHeapList *offHeapList);
+	bool addObjToList(void *address, uintptr_t size);
+
+private:
+
+	ObjectAddrNode *createNewNode(void *address, uintptr_t size);
+	void printfObject(ObjectAddrNode *node);
+	void freeAllList();
+
+	uintptr_t nodeCount;
+	uintptr_t objTotalSize;
+	ObjectAddrNode *head;
+};
+
 class OffHeapList {
 
 	struct FreeList {
