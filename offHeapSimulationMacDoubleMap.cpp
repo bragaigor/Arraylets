@@ -41,7 +41,7 @@ public:
 	OffHeapObjectList() : 
 		nodeCount(0),
        		objTotalSize(0) {
-	
+		head = NULL;
 	}
 
 	~OffHeapObjectList() {
@@ -77,11 +77,16 @@ public:
 	 *
 	 * @return total bytes amount of freed memry
 	 */
-	uintptr_t removeHalfOfNodes(OffHeapList *offHeapList, int fd) {
+	uintptr_t removeHalfOfNodes(OffHeapList *offHeapList, int fd, int64_t *acumTime) {
 		if (NULL == head || (nodeCount < 3)) {
 			printf("List is empty or has less than 3 nodes. Nothing to do.\n");
 			return 0;
 		}
+
+		ElapsedTimer timer;
+		timer.startTimer();
+		*acumTime = 0;
+		int64_t timeBefore = 0, timeAfter = 0;
 
 		ObjectAddrNode *current = head;
 		uintptr_t nodesDeleted = 0;
@@ -96,7 +101,7 @@ public:
 			delete tempNode;
 			offHeapList->addEntryToFreeList(startAddress, objSize);
 			/* Free off-heap memory range. Will this work? */
-			munmap(startAddress, objSize);
+			timeBefore = timer.getElapsedMicros();
 			void *address = mmap(
 						startAddress,
 						objSize,
@@ -111,6 +116,8 @@ public:
 				printf("!!!!!!!!!!!!!!!!!!!! errno: %d\n", errno);
 				return UINTMAX_MAX;
 			}
+			timeAfter = timer.getElapsedMicros();
+			*acumTime += (timeAfter - timeBefore);
 			nodeCount--;
 			nodesDeleted++;
 			objTotalSize -= objSize;
@@ -146,6 +153,7 @@ private:
 		ObjectAddrNode *node = new ObjectAddrNode;
 		node->address = address;
 		node->size = size;
+		node->next = NULL;
 		nodeCount++;
 		return node;
 	}
@@ -474,7 +482,7 @@ int main(int argc, char** argv) {
 	//return 1;
 	
 	if (argc != 4) {
-		printf("USAGE: %s seed# iterations# debug <0,1>\n", argv[0]);
+		printf("USAGE: %s seed# iterations#<-1,1,2,3,4,...> debug <0,1>\n", argv[0]);
 		printf("Example: %s 6363 50000 1\n", argv[0]);
 		return 1;
 	}
@@ -482,18 +490,25 @@ int main(int argc, char** argv) {
 	int seed = atoi(argv[1]);
 	int iterations = atoi(argv[2]);
 	bool debug = atoi(argv[3]) == 1;
+	bool useWorstCase = false;
 	rnd.setSeed(seed); // rnd.nextNatural() % FOUR_GB
+#define PRE_ITER_COUNT 10
+	if (-1 == iterations) {
+		printf("Using iteration combination of worst case\n");
+		iterations = PRE_ITER_COUNT;
+		useWorstCase = true;
+	}
 
 	uintptr_t iterArrayletSize[iterations];
 	uintptr_t biggestFreeSize[iterations];
 	void *biggestFreeSizeAddrs[iterations];
+	uintptr_t worstCaseIters[PRE_ITER_COUNT] = {2, 3, 7, 15, 31, 63, 127, 255, 511, 1023};
 
 	size_t pagesize = getpagesize(); // 4096 bytes
 	printf("System page size: %zu bytes\n", pagesize);
-	uintptr_t regionCount = 1024;
-	//uintptr_t offHeapRegionSize = FOUR_GB;
+	uintptr_t regionCount = 1024 * 2;
 	uintptr_t inHeapSize = FOUR_GB;
-	uintptr_t offHeapSize = inHeapSize * 8;
+	uintptr_t offHeapSize = inHeapSize * 6;
 	uintptr_t inHeapRegionSize = inHeapSize / regionCount;
 	uintptr_t offHeapRegionSize = inHeapRegionSize;
 	ElapsedTimer timer;
@@ -501,20 +516,6 @@ int main(int argc, char** argv) {
 
 	int mmapProt = 0;
 	int mmapFlags = 0;
-
-	// void *dummyMem = mmap(
-    //             NULL,
-    //             (uintptr_t)FOUR_GB, // File size
-    //             PROT_READ | PROT_WRITE,
-    //             MAP_PRIVATE | MAP_ANON,
-    //             -1, // File handle
-    //             0);
-	// if (dummyMem == MAP_FAILED) {
-	// 	std::cerr << "Failed to mmap in-heap " << strerror(errno) << "\n";
-	// 	return 1;
-	// }
-	// memset(dummyMem, 'Z', (uintptr_t)FOUR_GB);
-	// printf("CONSUMED %zu of memory at: %p!!!!!!!!\n", (uintptr_t)FOUR_GB, dummyMem);
 
 	mmapProt = PROT_NONE; //PROT_READ | PROT_WRITE;
 	mmapFlags = MAP_PRIVATE | MAP_ANON;
@@ -600,11 +601,6 @@ int main(int argc, char** argv) {
 		inOffHeapUsed[i] = false;
 		//printf("\tPopulating address: %p with A's\n", chosenAddress);
 		mprotect(chosenAddress, inHeapRegionSize, mmapProt);
-		// intptr_t result2 = (intptr_t)madvise(chosenAddress, inHeapRegionSize, MADV_FREE_REUSE);
-		// if (0 != result2) {
-		// 	printf("madvise returned -1 after memset and errno: %d, error message: %s\n", errno, strerror(errno));
-		// 	return 1;
-		// }
 		memset(chosenAddress, vals[i%SIXTEEN], inHeapRegionSize);
 		totalCalculatedComitedMem += inHeapRegionSize;
 	}
@@ -637,7 +633,12 @@ int main(int argc, char** argv) {
 		if(i % 7 == 0) {
 			sizeSwitch = !sizeSwitch;
 		}
-		uintptr_t numOfRegionsAlloc = sizeSwitch ? ((rnd.nextNatural() % 8) + 2) : ((rnd.nextNatural() % 23) + 10); // Numbers between 2 and 32 included
+		uintptr_t numOfRegionsAlloc = 0; 
+		if (useWorstCase) {
+			numOfRegionsAlloc = worstCaseIters[i];
+		} else {
+			numOfRegionsAlloc = sizeSwitch ? ((rnd.nextNatural() % 8) + 2) : ((rnd.nextNatural() % 23) + 10); // Numbers between 2 and 32 included
+		}
 		uintptr_t commitSize = numOfRegionsAlloc * inHeapRegionSize;
 		printf("Chosen region count: %zu, commitSize: %zu, totalOffHeapCommited: %zu\n", numOfRegionsAlloc, commitSize, totalOffHeapCommited);
 		/* Decommit in-heap & commit off-heap regions until we deplit in-heap memory size */
@@ -709,7 +710,6 @@ int main(int argc, char** argv) {
 			printf("\tJust commited off-heap region. Consumed physical memory: %llu bytes. Bytes remaining: %zu\n", consumePhysicalMemory, remmainingBytes);
 			totalOffHeapCommited += commitSize;
 			objList.addObjToList(addr, commitSize);
-
 			doubleMapCount++;
 		}
 
@@ -724,17 +724,21 @@ int main(int argc, char** argv) {
 		if (debug) {
 			objList.printOffHeapObjectStatus();
 		}
-		uintptr_t offHeapBytesFreed = objList.removeHalfOfNodes(&offHeapList, fd);
+		int64_t acumTime = 0;
+		uintptr_t offHeapBytesFreed = objList.removeHalfOfNodes(&offHeapList, fd, &acumTime);
 		if (UINTMAX_MAX == offHeapBytesFreed) {
 			printf("Something went wrong while freeing half of off-heap objects\n");
 			return 1;
 		}
 		printf("Just decommited half of off-heap nodes, totalling %zu bytes\n", offHeapBytesFreed);
+		printf("Time taken to decommit half of off-heap: %lld microseconds, %lld milliseconds\n", acumTime, (acumTime/1000));
+		int64_t averagePerMB = (acumTime * 1024 * 1024) / offHeapBytesFreed;
+		printf("Average time to decommit per MB: %lld microseconds, %lld milliseconds\n", averagePerMB, (averagePerMB/1000));
 		consumePhysicalMemory = initialfreePhysicalMemory - getAvailablePhysicalMemory();
 		printf("Consumed physical memory: %llu bytes.\n", consumePhysicalMemory);
 			
 		uintptr_t regionsFreedCount = offHeapBytesFreed / inHeapRegionSize;
-		/* Remap in-heap memory. Does Mac have shared memory limits???? */
+		/* Remap in-heap memory. Does Mac have shared memory limits? ANS: It seems that it does not */
 		for (int j = 0; j < numDoubleMappedRegions; j++) {
 			void **doubleMapAdresses = doubleMappedList[j];
 			for (int jj = 0; jj < numOfRegionsAlloc; jj++) {
@@ -763,11 +767,6 @@ int main(int argc, char** argv) {
 		// sleep(2);
 	}
 
-	// for(uintptr_t i = 0; i < FOUR_GB; i += 1024*1024*32) {
-	// 	char *charAddr = (char*)((uintptr_t)dummyMem + i);
-	// 	printf("i: %zu, charAddr: %c, charAddr+128: %c, charAddr+1024: %c\n", i, *charAddr, *(charAddr+128), *(charAddr+1024));
-	// }
-	// munmap(dummyMem, (uintptr_t)FOUR_GB);
 	// ###############################################
 
 	printf("########################################### SUMMARY #####################################################\n");
