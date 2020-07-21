@@ -17,7 +17,7 @@ public:
 	OffHeapObjectList() :
 		nodeCount(0),
 		objTotalSize(0) {
-
+		head = NULL;
 	}
 
 	~OffHeapObjectList() {

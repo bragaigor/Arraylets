@@ -7,6 +7,7 @@
 
 #include "util.hpp"
 #include "offHeapSimulationX.hpp"
+#include <cmath>
 
 // To run:
 // For MAC
@@ -109,6 +110,7 @@ OffHeapObjectList::ObjectAddrNode *OffHeapObjectList::createNewNode(void *addres
 	ObjectAddrNode *node = new ObjectAddrNode;
 	node->address = address;
 	node->size = size;
+	node->next = NULL;
 	nodeCount++;
 	return node;
 }
@@ -332,41 +334,72 @@ void testOffHeapList() {
 	offHeapList.printFreeListStatus();
 }
 
+uint64_t getAvailablePhysicalMemory() {
+
+	int64_t pageSize = sysconf(_SC_PAGESIZE);
+	int64_t availablePages = 0;
+	uint64_t result = 0;
+	availablePages = sysconf(_SC_AVPHYS_PAGES);
+	result =  pageSize * availablePages;
+	return result;
+}
+
+uintptr_t adjustedInHeapRegionSize(uintptr_t inHeapRegionSize, uintptr_t objectAlignmentInBytes) {
+	uintptr_t sizeInBytes =  (inHeapRegionSize + (objectAlignmentInBytes - 1)) & (uintptr_t)~(objectAlignmentInBytes - 1);
+	return sizeInBytes;
+}
+
 int main(int argc, char** argv) {
 
 	//testOffHeapList();
 	//return 1;
 	
 	if (argc != 4) {
-		printf("USAGE: %s seed# iterations# debug<0,1>\n", argv[0]);
-		printf("Example: %s 6363 50000 1\n", argv[0]);
+		printf("USAGE: %s seed# iterations#<-1,1,2,3,*> debug<0,1>\n", argv[0]);
+		printf("Example: %s 167 -1 0\n", argv[0]);
+		printf("Note: iterations = -1 means the worse possible sequence of iterations\n");
 		return 1;
 	}
 	PaddedRandom rnd;
 	int seed = atoi(argv[1]);
 	int iterations = atoi(argv[2]);
 	bool debug = atoi(argv[3]) == 1;
+	bool useWorstCase = false;
 	rnd.setSeed(seed); // rnd.nextNatural() % FOUR_GB
 
-	uintptr_t iterArrayletSize[iterations];
-	uintptr_t biggestFreeSize[iterations];
-	void *biggestFreeSizeAddrs[iterations];
-
-	size_t pagesize = getpagesize(); // 4096 bytes
+	size_t pagesize = getpagesize(); // 4k bytes
 	printf("System page size: %zu\n", pagesize);
 	uintptr_t regionCount = 1024;
-	uintptr_t inHeapSize = FOUR_GB + TWO_GB;
-	uintptr_t offHeapSize = inHeapSize * 2.5;
+	uintptr_t inHeapSize = FOUR_GB;
 	uintptr_t inHeapRegionSize = inHeapSize / regionCount;
+	inHeapRegionSize = adjustedInHeapRegionSize(inHeapRegionSize, pagesize);
+	inHeapSize = inHeapRegionSize * regionCount;
+	double offHeadConst = ceil(log2(regionCount)) / 2.0;
+	uintptr_t offHeapSize = offHeadConst * inHeapSize;
 	uintptr_t offHeapRegionSize = inHeapRegionSize;
 	ElapsedTimer timer;
 	timer.startTimer();
+
+	if (-1 == iterations) {
+		printf("Using iteration combination of worst case\n");
+		iterations = ceil(log2(regionCount)) - 1;
+		useWorstCase = true;
+	}
+	uintptr_t iterArrayletSize[iterations];
+	uintptr_t biggestFreeSize[iterations];
+	void *biggestFreeSizeAddrs[iterations];
 
 	int mmapProt = 0;
 	int mmapFlags = 0;
 
 	mmapProt = PROT_NONE; //PROT_READ | PROT_WRITE;
 	mmapFlags = MAP_PRIVATE | MAP_ANON;
+
+	/* Calculate initial free physycal memory */
+	uint64_t initialfreePhysicalMemory = getAvailablePhysicalMemory();
+	if (0 == initialfreePhysicalMemory) {
+		return 1;
+	}
 
 	int64_t elapsedTime1 = timer.getElapsedMicros();
 
@@ -400,14 +433,7 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
-	printf("In-heap address: %p, Off-heap address: %p\n", inHeapMmap, offHeapMmap);
-
-	/*
-	mprotect(inHeapMmap, inHeapSize, PROT_READ | PROT_WRITE);
-	memset(inHeapMmap, 'a', inHeapSize);
-	munmap(inHeapMmap, inHeapSize);
-	return 1;
-	*/
+	printf("Regions size: %zu, In-heap address: %p with size: %zu, Off-heap address: %p with size: %zu, off-heap constant: %.2f\n", inHeapRegionSize, inHeapMmap, inHeapSize, offHeapMmap, offHeapSize, offHeadConst);
 
 	OffHeapList offHeapList(offHeapMmap, offHeapSize);
 	OffHeapObjectList objList;
@@ -426,12 +452,14 @@ int main(int argc, char** argv) {
 		void *chosenAddress = (void*)((uintptr_t)inHeapMmap + (i * inHeapRegionSize));
 		leafAddresses[i] = chosenAddress;
 		inOffHeapUsed[i] = false;
-		//printf("\tPopulating address: %p with A's\n", chosenAddress);
+		// printf("\tPopulating address: %p with A's\n", chosenAddress);
 		mprotect(chosenAddress, inHeapRegionSize, mmapProt);
 		memset(chosenAddress, vals[i%SIXTEEN], inHeapRegionSize);
 		totalCalculatedComitedMem += inHeapRegionSize;
 	}
 
+	uint64_t consumePhysicalMemory = initialfreePhysicalMemory - getAvailablePhysicalMemory();
+	printf("In-heap 100%% commited. Application consumed %zu bytes of physical memory\n", consumePhysicalMemory);
 	std::cout << "************************************************\n";
 	if (debug) {
         	char *someString = (char*)inHeapMmap;
@@ -457,20 +485,26 @@ int main(int argc, char** argv) {
 			sizeSwitch = !sizeSwitch;
 		}
 		/* For 7 iterations pick regions sized between 2 and 9, the next 7 iterations pick regions sized between 10 and 32 */
-		uintptr_t numOfRegionsAlloc = sizeSwitch ? ((rnd.nextNatural() % 8) + 2) : ((rnd.nextNatural() % 23) + 10); // Numbers between 2 and 32 included
+		uintptr_t numOfRegionsAlloc = 0;
+		if (useWorstCase) {
+			/* Regions sequence 2, 3, 7, 15, 31, 63, 127, 255, 511, 1023 */
+			numOfRegionsAlloc = (1 == (i+1)) ? 2 : pow(2, (i+1)) - 1;
+		} else {
+			numOfRegionsAlloc = sizeSwitch ? ((rnd.nextNatural() % 8) + 2) : ((rnd.nextNatural() % 23) + 10); // Numbers between 2 and 32 included
+		}
 		uintptr_t commitSize = numOfRegionsAlloc * inHeapRegionSize;
 		printf("Iter: %d, Chosen region count: %zu, commitSize: %zu, totalOffHeapCommited so far: %zu\n", i, numOfRegionsAlloc, commitSize, totalOffHeapCommited);
 		/* Decommit in-heap & commit off-heap regions until we deplit in-heap memory size */
 		/* E.g. If inHeapSize = 1024MB, totalOffHeapCommited = 968MB, commitSize = 82MB it will surpass maximum allowed */
 		while (totalOffHeapCommited + commitSize < inHeapSize) {
-			uintptr_t remmainingByes = commitSize;
+			uintptr_t remmainingBytes = commitSize;
 			int j = 0;
 			/* Decommit in-heap regions */
-			while (remmainingByes > 0) {
+			while (remmainingBytes > 0) {
 				void *chosenAddress = NULL;
 				if(!inOffHeapUsed[j]) {
 					chosenAddress = leafAddresses[j];
-					remmainingByes -= inHeapRegionSize;
+					remmainingBytes -= inHeapRegionSize;
 					intptr_t ret = (intptr_t)madvise(chosenAddress, inHeapRegionSize, MADV_DONTNEED);
 					if (0 != ret) {
 						printf("madvise returned -1 and errno: %d, error message: %s\n", errno, strerror(errno));
@@ -479,6 +513,11 @@ int main(int argc, char** argv) {
 					inOffHeapUsed[j] = true;
 				}
 				j++;
+			}
+
+			consumePhysicalMemory = initialfreePhysicalMemory - getAvailablePhysicalMemory();
+			if (debug) {
+				printf("\tConsumed physical memory: %zu bytes\n", consumePhysicalMemory);
 			}
 			/* Record returned address to keep track of object order */
 			void *addr = offHeapList.findAvailableAddress(commitSize);
@@ -491,6 +530,10 @@ int main(int argc, char** argv) {
 			mprotect(addr, commitSize, mmapProt);
 			memset(addr, vals[i % SIXTEEN], commitSize);
 			totalOffHeapCommited += commitSize;
+			consumePhysicalMemory = initialfreePhysicalMemory - getAvailablePhysicalMemory();
+			if (debug) {
+				printf("\tJust commited off-heap region. Consumed physical memory: %zu bytes. Bytes remaining: %zu\n", consumePhysicalMemory, remmainingBytes);
+			}
 			/* Add space as an object to object list */
 			objList.addObjToList(addr, commitSize);
 		}
@@ -503,6 +546,10 @@ int main(int argc, char** argv) {
 		if (UINTMAX_MAX == offHeapBytesFreed) {
 			printf("Something went wrong while freeing half of off-heap objects\n");
 			return 1;
+		}
+		consumePhysicalMemory = initialfreePhysicalMemory - getAvailablePhysicalMemory();
+		if (debug) {
+			printf("Just released half of off-heap objects. Consumed physical memory: %zu bytes.\n", consumePhysicalMemory);
 		}
 		uintptr_t regionsFreedCount = offHeapBytesFreed / inHeapRegionSize;
 		/* Recommit in-heap memory */
